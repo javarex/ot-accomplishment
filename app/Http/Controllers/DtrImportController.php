@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Contracts\DtrParser;
 use App\Models\AccomplishmentReport;
 use App\Models\DtrImport;
+use App\Services\Accomplishments\DtrImportStager;
 use App\Services\Accomplishments\OvertimeQuantity;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -19,65 +19,33 @@ use InvalidArgumentException;
 
 class DtrImportController extends Controller
 {
-    public function store(Request $request, AccomplishmentReport $report, DtrParser $parser): RedirectResponse
+    public function preview(Request $request, DtrImportStager $stager): JsonResponse
+    {
+        Gate::authorize('create', AccomplishmentReport::class);
+        $request->validate(['dtr' => ['required', 'file', 'mimes:pdf', 'extensions:pdf', 'max:10240']]);
+        $parsed = $stager->parse($request->file('dtr'));
+
+        return response()->json([
+            'employee_name' => $parsed['employee_name'],
+            'month' => $parsed['month'],
+            'year' => $parsed['year'],
+            'entries' => collect($parsed['entries'])
+                ->filter(fn (array $entry): bool => ($entry['overtime_minutes'] ?? 0) > 0)
+                ->map(fn (array $entry): array => [
+                    'date' => $entry['date'],
+                    'overtime_minutes' => $entry['overtime_minutes'],
+                ])->values()->all(),
+        ]);
+    }
+
+    public function store(Request $request, AccomplishmentReport $report, DtrImportStager $stager): RedirectResponse
     {
         Gate::authorize('importDtr', $report);
         $request->validate(['dtr' => ['required', 'file', 'mimes:pdf', 'extensions:pdf', 'max:10240']]);
-        $file = $request->file('dtr');
-        $hash = hash_file('sha256', $file->getRealPath());
-        $existing = $report->dtrImports()->where('file_hash', $hash)->first();
+        $import = $stager->stage($report, $request->user()->id, $request->file('dtr'));
 
-        if ($existing) {
-            return redirect()->route('reports.dtr.show', [$report, $existing])->with('status', 'This DTR was already uploaded. Review the existing import.');
-        }
-
-        $parsed = $parser->parse($file->getRealPath());
-
-        if ($parsed['month'] !== $report->report_month || $parsed['year'] !== $report->report_year) {
-            throw ValidationException::withMessages(['dtr' => 'The DTR period does not match the report period.']);
-        }
-
-        $path = $file->store('dtr-imports');
-
-        if (! $path) {
-            throw ValidationException::withMessages(['dtr' => 'The DTR file could not be stored.']);
-        }
-
-        try {
-            $import = DB::transaction(function () use ($report, $request, $file, $path, $hash, $parsed): DtrImport {
-                $import = $report->dtrImports()->create([
-                    'user_id' => $request->user()->id,
-                    'employee_name' => $parsed['employee_name'],
-                    'employee_id' => $parsed['employee_id'],
-                    'month' => $parsed['month'],
-                    'year' => $parsed['year'],
-                    'original_filename' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'file_hash' => $hash,
-                    'import_status' => 'review',
-                    'parsed_data' => $parsed,
-                ]);
-
-                foreach ($parsed['entries'] as $entry) {
-                    $import->entries()->create([
-                        'work_date' => $entry['date'],
-                        'am_in' => $entry['am_in'],
-                        'am_out' => $entry['am_out'],
-                        'pm_in' => $entry['pm_in'],
-                        'pm_out' => $entry['pm_out'],
-                        'overtime_minutes' => $entry['overtime_minutes'],
-                        'remarks' => $entry['remarks'],
-                    ]);
-                }
-
-                return $import;
-            });
-        } catch (\Throwable $exception) {
-            Storage::delete($path);
-            throw $exception;
-        }
-
-        return redirect()->route('reports.dtr.show', [$report, $import]);
+        return redirect()->route('reports.dtr.show', [$report, $import])
+            ->with('status', $import->wasRecentlyCreated ? 'Review the detected DTR dates before importing them.' : 'This DTR was already uploaded. Review the existing import.');
     }
 
     public function show(AccomplishmentReport $report, DtrImport $dtrImport): Response

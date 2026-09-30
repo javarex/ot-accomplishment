@@ -31,6 +31,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('reports/{report}/generate', [ReportGenerationController::class, 'generate'])->name('reports.generate');
     Route::post('reports/{report}/generate-docx', [ReportGenerationController::class, 'generateDocx'])->name('reports.generate-docx');
     Route::post('reports/{report}/ai-improve', AccomplishmentAiController::class)->middleware('throttle:10,1')->name('reports.ai.improve');
+    Route::post('reports/dtr/preview', [DtrImportController::class, 'preview'])->name('reports.dtr.preview');
     Route::post('reports/{report}/dtr', [DtrImportController::class, 'store'])->name('reports.dtr.store');
     Route::get('reports/{report}/dtr/{dtrImport}', [DtrImportController::class, 'show'])->name('reports.dtr.show');
     Route::post('reports/{report}/dtr/{dtrImport}/import', [DtrImportController::class, 'commit'])->name('reports.dtr.commit');

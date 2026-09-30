@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, useHttp, usePage } from '@inertiajs/react';
 import { GripVertical, Plus, Sparkles, Trash2 } from 'lucide-react';
 import {
     useRef,
@@ -27,7 +27,11 @@ import {
     generateDocx,
 } from '@/routes/reports';
 import { improve } from '@/routes/reports/ai';
-import { store as uploadDtr, show as reviewDtr } from '@/routes/reports/dtr';
+import {
+    preview as previewDtr,
+    store as uploadDtr,
+    show as reviewDtr,
+} from '@/routes/reports/dtr';
 import {
     index as signatoryIndex,
     store as storeSignatory,
@@ -87,6 +91,12 @@ type PageData = {
         createdSignatory?: { id: number; type: string };
     };
     csrfToken: string;
+};
+type DtrPreview = {
+    employee_name: string;
+    month: number;
+    year: number;
+    entries: Array<{ date: string; overtime_minutes: number }>;
 };
 
 function calculatedQuantity(date: string, minutes: number | null): string {
@@ -158,6 +168,11 @@ export default function ReportEditor({
     );
     const [busy, setBusy] = useState(false);
     const [dtrFile, setDtrFile] = useState<File | null>(null);
+    const dtrPreview = useHttp<{ dtr: File | null }, DtrPreview>({ dtr: null });
+    const [dtrPreviewStatus, setDtrPreviewStatus] = useState<string | null>(
+        null,
+    );
+    const [dtrPreviewDates, setDtrPreviewDates] = useState<string[]>([]);
     const [aiIndex, setAiIndex] = useState<number | null>(null);
     const [suggestion, setSuggestion] = useState('');
     const [aiOriginal, setAiOriginal] = useState('');
@@ -286,6 +301,7 @@ export default function ReportEditor({
     }
 
     function save(finalize: boolean) {
+        const previewedDtr = !report && dtrPreviewStatus ? dtrFile : null;
         const payload = {
             report_month: month,
             report_year: year,
@@ -300,10 +316,20 @@ export default function ReportEditor({
             approved_name: '',
             entries: entries.map(({ key: _key, ...entry }) => entry),
             finalize,
+            ...(previewedDtr
+                ? {
+                      dtr: previewedDtr,
+                      dtr_previewed: true,
+                      dtr_import_dates: entries
+                          .map((entry) => entry.accomplishment_date)
+                          .filter((date) => dtrPreviewDates.includes(date)),
+                  }
+                : {}),
         };
         const options = {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: Boolean(previewedDtr),
+            forceFormData: Boolean(previewedDtr),
             onStart: () => setBusy(true),
             onFinish: () => setBusy(false),
         };
@@ -350,9 +376,45 @@ export default function ReportEditor({
         setAiIndex(null);
     }
 
-    function importDtr(event: FormEvent<HTMLFormElement>) {
+    async function importDtr(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        if (!report || !dtrFile) return;
+        if (!dtrFile) return;
+        if (!report) {
+            try {
+                const preview = await dtrPreview.post(previewDtr().url);
+                setMonth(preview.month);
+                setYear(preview.year);
+                const existingDates = new Set(
+                    entries.map((entry) => entry.accomplishment_date),
+                );
+                const imported = preview.entries
+                    .filter((entry) => !existingDates.has(entry.date))
+                    .map((entry): Entry => ({
+                        key: crypto.randomUUID(),
+                        accomplishment_date: entry.date,
+                        quantity: calculatedQuantity(
+                            entry.date,
+                            entry.overtime_minutes,
+                        ),
+                        time_minutes: entry.overtime_minutes,
+                        task_accomplished: '',
+                        original_task_accomplished: '',
+                        ai_suggested_task_accomplished: '',
+                        ai_enhanced: false,
+                    }));
+                setEntries((current) => [...current, ...imported]);
+                setDtrPreviewStatus(
+                    `Read ${preview.employee_name}'s DTR for ${new Date(preview.year, preview.month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}. ${preview.entries.length} overtime date(s) found. Edit the rows below, then save when ready.`,
+                );
+                setDtrPreviewDates(
+                    imported.map((entry) => entry.accomplishment_date),
+                );
+                setDirty(true);
+            } catch {
+                setDtrPreviewStatus(null);
+            }
+            return;
+        }
         router.post(
             uploadDtr(report.id).url,
             { dtr: dtrFile },
@@ -481,7 +543,8 @@ export default function ReportEditor({
                         </h2>
                         <p className="text-sm text-muted-foreground">
                             Choose the reporting period and who will sign the
-                            report.
+                            report. When processing a DTR on a new report, its
+                            month and year set the reporting period.
                         </p>
                     </div>
                     <div>
@@ -489,6 +552,7 @@ export default function ReportEditor({
                         <Input
                             id="period"
                             type="month"
+                            disabled={!report && dtrFile !== null}
                             value={`${year}-${String(month).padStart(2, '0')}`}
                             onChange={(event) => {
                                 const [y, m] = event.target.value
@@ -594,62 +658,78 @@ export default function ReportEditor({
                         </div>
                     ))}
                 </section>
-                {report && (
-                    <section className="rounded-2xl border bg-card p-5 shadow-sm shadow-black/2 md:p-6">
-                        <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
-                            02 · Import
-                        </p>
-                        <h2 className="mt-1 text-lg font-semibold">
-                            Daily Time Record
-                        </h2>
-                        <p className="mb-3 text-sm text-muted-foreground">
-                            Upload a text-based Civil Service Form No. 48 PDF.
-                            You will review detected dates before importing
-                            them.
-                        </p>
-                        <form
-                            onSubmit={importDtr}
-                            className="flex flex-wrap items-end gap-3"
+                <section className="rounded-2xl border bg-card p-5 shadow-sm shadow-black/2 md:p-6">
+                    <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
+                        02 · Import
+                    </p>
+                    <h2 className="mt-1 text-lg font-semibold">
+                        Daily Time Record
+                    </h2>
+                    <p className="mb-3 text-sm text-muted-foreground">
+                        Upload a text-based Civil Service Form No. 48 PDF.
+                        {report
+                            ? ' You will review detected dates before importing them.'
+                            : ' Processing the DTR adds overtime dates to this unsaved form. Edit them before saving.'}
+                    </p>
+                    <form
+                        onSubmit={importDtr}
+                        className="flex flex-wrap items-end gap-3"
+                    >
+                        <div>
+                            <Label htmlFor="dtr">DTR PDF</Label>
+                            <Input
+                                id="dtr"
+                                type="file"
+                                accept="application/pdf,.pdf"
+                                onChange={(event) => {
+                                    const file =
+                                        event.target.files?.[0] ?? null;
+                                    setDtrFile(file);
+                                    dtrPreview.setData('dtr', file);
+                                    dtrPreview.clearErrors();
+                                    setDtrPreviewStatus(null);
+                                    setDtrPreviewDates([]);
+                                }}
+                            />
+                        </div>
+                        <Button
+                            type="submit"
+                            disabled={!dtrFile || busy || dtrPreview.processing}
                         >
-                            <div>
-                                <Label htmlFor="dtr">DTR PDF</Label>
-                                <Input
-                                    id="dtr"
-                                    type="file"
-                                    accept="application/pdf,.pdf"
-                                    onChange={(event) =>
-                                        setDtrFile(
-                                            event.target.files?.[0] ?? null,
-                                        )
-                                    }
-                                />
-                            </div>
-                            <Button type="submit" disabled={!dtrFile || busy}>
-                                Process DTR
-                            </Button>
-                        </form>
-                        {report.dtr_imports?.length > 0 && (
-                            <div className="mt-4 space-y-2">
-                                {report.dtr_imports.map((item) => (
-                                    <div key={item.id} className="text-sm">
-                                        <Link
-                                            href={reviewDtr({
-                                                report: report.id,
-                                                dtrImport: item.id,
-                                            })}
-                                            className="underline"
-                                        >
-                                            {item.original_filename}
-                                        </Link>{' '}
-                                        <span className="text-muted-foreground">
-                                            ({item.import_status})
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </section>
-                )}
+                            Process DTR
+                        </Button>
+                    </form>
+                    {!report && dtrPreviewStatus && (
+                        <p className="mt-3 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-100">
+                            {dtrPreviewStatus}
+                        </p>
+                    )}
+                    {!report && dtrPreview.errors.dtr && (
+                        <p className="mt-3 text-sm text-destructive">
+                            {dtrPreview.errors.dtr}
+                        </p>
+                    )}
+                    {report && report.dtr_imports?.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                            {report.dtr_imports.map((item) => (
+                                <div key={item.id} className="text-sm">
+                                    <Link
+                                        href={reviewDtr({
+                                            report: report.id,
+                                            dtrImport: item.id,
+                                        })}
+                                        className="underline"
+                                    >
+                                        {item.original_filename}
+                                    </Link>{' '}
+                                    <span className="text-muted-foreground">
+                                        ({item.import_status})
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
                 <section className="rounded-2xl border bg-card p-5 shadow-sm shadow-black/2 md:p-6">
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                         <div>
@@ -1078,7 +1158,9 @@ export default function ReportEditor({
                 <div className="flex flex-wrap gap-2">
                     <Button
                         type="button"
-                        disabled={busy}
+                        disabled={
+                            busy || (!report && !!dtrFile && !dtrPreviewStatus)
+                        }
                         onClick={() => save(false)}
                     >
                         Save Draft
@@ -1086,7 +1168,9 @@ export default function ReportEditor({
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={busy}
+                        disabled={
+                            busy || (!report && !!dtrFile && !dtrPreviewStatus)
+                        }
                         onClick={() => save(true)}
                     >
                         Finalize

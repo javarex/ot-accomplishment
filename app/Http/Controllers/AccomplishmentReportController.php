@@ -4,13 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\AccomplishmentReport;
 use App\Models\Signatory;
+use App\Services\Accomplishments\DtrImportStager;
 use App\Services\Accomplishments\OvertimePayCalculator;
 use App\Services\Accomplishments\ReportWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class AccomplishmentReportController extends Controller
 {
@@ -56,11 +61,82 @@ class AccomplishmentReportController extends Controller
         ]);
     }
 
-    public function store(Request $request, ReportWriter $writer): RedirectResponse
+    public function store(Request $request, ReportWriter $writer, DtrImportStager $stager): RedirectResponse
     {
         Gate::authorize('create', AccomplishmentReport::class);
         if ($request->exists('hourly_rate') && ! $request->user()->hasPermission('edit_ot_computation')) {
             abort(403);
+        }
+        $dtrData = $request->validate([
+            'dtr' => ['sometimes', 'file', 'mimes:pdf', 'extensions:pdf', 'max:10240'],
+            'dtr_previewed' => ['sometimes', 'boolean'],
+            'dtr_import_dates' => ['sometimes', 'array'],
+            'dtr_import_dates.*' => ['required', 'date_format:Y-m-d', 'distinct'],
+        ]);
+        $dtr = $request->file('dtr');
+        $previewedDtr = $request->boolean('dtr_previewed');
+
+        if ($dtr && $request->boolean('finalize')) {
+            throw ValidationException::withMessages(['dtr' => 'Review the DTR before finalizing the report.']);
+        }
+
+        if ($dtr) {
+            $storedPath = null;
+            try {
+                $import = DB::transaction(function () use ($request, $writer, $stager, $dtr, $dtrData, $previewedDtr, &$storedPath) {
+                    $parsed = $stager->parse($dtr);
+                    $report = $writer->save(null, $request->user()->id, [
+                        ...$request->all(),
+                        'report_month' => $parsed['month'],
+                        'report_year' => $parsed['year'],
+                    ]);
+
+                    if ($previewedDtr) {
+                        $overtimeDates = collect($parsed['entries'])
+                            ->filter(fn (array $entry): bool => ($entry['overtime_minutes'] ?? 0) > 0)
+                            ->pluck('date')->all();
+
+                        foreach ($dtrData['dtr_import_dates'] ?? [] as $date) {
+                            if (! in_array($date, $overtimeDates, true) || ! $report->entries()->whereDate('accomplishment_date', $date)->exists()) {
+                                throw ValidationException::withMessages(['dtr_import_dates' => 'A selected DTR date is missing from the report. Process the DTR again.']);
+                            }
+                        }
+                    }
+
+                    $import = $stager->stage($report, $request->user()->id, $dtr, $parsed);
+                    $storedPath = $import->file_path;
+
+                    if ($previewedDtr) {
+                        foreach ($dtrData['dtr_import_dates'] ?? [] as $date) {
+                            $dtrEntry = $import->entries()->whereDate('work_date', $date)->firstOrFail();
+                            $reportEntry = $report->entries()->whereDate('accomplishment_date', $date)->firstOrFail();
+
+                            $reportEntry->update(['dtr_entry_id' => $dtrEntry->id]);
+                            $dtrEntry->update(['selected_for_import' => true]);
+                        }
+
+                        if (($dtrData['dtr_import_dates'] ?? []) !== []) {
+                            $import->update(['import_status' => 'imported']);
+                        }
+                    }
+
+                    return $import;
+                });
+            } catch (Throwable $exception) {
+                if ($storedPath !== null) {
+                    Storage::delete($storedPath);
+                }
+
+                throw $exception;
+            }
+
+            if ($previewedDtr) {
+                return redirect()->route('reports.edit', $import->accomplishment_report_id)
+                    ->with('status', 'Report saved with DTR records.');
+            }
+
+            return redirect()->route('reports.dtr.show', [$import->accomplishment_report_id, $import])
+                ->with('status', 'Review the detected DTR dates before importing them.');
         }
         $report = $writer->save(null, $request->user()->id, $request->all());
 
