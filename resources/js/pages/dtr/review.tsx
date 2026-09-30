@@ -38,7 +38,7 @@ export default function DtrReview({
     import: dtrImport,
     existingDates,
 }: {
-    report: { id: number };
+    report: { id: number; quantity_mode: 'custom' | 'time' };
     import: DtrImport;
     existingDates: string[];
 }) {
@@ -195,7 +195,12 @@ export default function DtrReview({
                                                 selected.includes(entry.id) && (
                                                     <Input
                                                         className="mt-2 w-28"
-                                                        placeholder="e.g. 3 documents"
+                                                        placeholder={
+                                                            report.quantity_mode ===
+                                                            'time'
+                                                                ? 'e.g. 2h 10m'
+                                                                : 'e.g. 3 documents'
+                                                        }
                                                         value={
                                                             manualQuantities[
                                                                 entry.id
@@ -274,8 +279,11 @@ export default function DtrReview({
                 )}
                 <p className="text-sm text-muted-foreground">
                     Only overtime rows are selected by default. To include an
-                    ordinary day, select it and enter a quantity. Imported task
-                    descriptions start blank.
+                    ordinary day, select it and enter{' '}
+                    {report.quantity_mode === 'time'
+                        ? 'a time such as 2h 10m'
+                        : 'a quantity'}
+                    . Imported task descriptions start blank.
                 </p>
                 <div className="flex gap-2">
                     <Button

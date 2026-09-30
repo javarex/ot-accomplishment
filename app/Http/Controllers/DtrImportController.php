@@ -15,6 +15,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
 
 class DtrImportController extends Controller
 {
@@ -88,7 +89,7 @@ class DtrImportController extends Controller
         ])]);
 
         return Inertia::render('dtr/review', [
-            'report' => $report->only(['id', 'report_month', 'report_year']),
+            'report' => $report->only(['id', 'report_month', 'report_year', 'quantity_mode']),
             'import' => $dtrImport->only(['id', 'employee_name', 'employee_id', 'month', 'year', 'original_filename', 'import_status', 'entries']),
             'existingDates' => $report->entries()->pluck('accomplishment_date')->map(fn ($date) => substr((string) $date, 0, 10))->all(),
         ]);
@@ -113,6 +114,7 @@ class DtrImportController extends Controller
         }
 
         $quantities = [];
+        $minutesById = [];
         foreach ($entries as $entry) {
             $quantity = $entry->overtime_minutes
                 ? OvertimeQuantity::format($entry->overtime_minutes)
@@ -120,12 +122,22 @@ class DtrImportController extends Controller
             if ($quantity === '') {
                 throw ValidationException::withMessages(['manual_quantities.'.$entry->id => 'Enter a quantity for the selected day.']);
             }
-            $quantities[$entry->id] = $quantity;
+            if ($report->quantity_mode === 'time') {
+                try {
+                    $minutesById[$entry->id] = $entry->overtime_minutes ?: OvertimeQuantity::parse($quantity);
+                } catch (InvalidArgumentException) {
+                    throw ValidationException::withMessages(['manual_quantities.'.$entry->id => 'Enter a time such as 2h 10m.']);
+                }
+                $quantities[$entry->id] = OvertimeQuantity::hours($minutesById[$entry->id]);
+            } else {
+                $minutesById[$entry->id] = null;
+                $quantities[$entry->id] = $quantity;
+            }
         }
 
         $skipped = 0;
         $imported = 0;
-        DB::transaction(function () use ($report, $dtrImport, $entries, $quantities, $data, &$skipped, &$imported): void {
+        DB::transaction(function () use ($report, $dtrImport, $entries, $quantities, $minutesById, $data, &$skipped, &$imported): void {
             foreach ($entries as $entry) {
                 $date = substr((string) $entry->work_date, 0, 10);
                 $existing = $report->entries()->whereDate('accomplishment_date', $date)->first();
@@ -137,12 +149,14 @@ class DtrImportController extends Controller
                 }
 
                 if ($existing) {
-                    $existing->update(['quantity' => $quantities[$entry->id], 'dtr_entry_id' => $entry->id]);
+                    $existing->update(['quantity' => $quantities[$entry->id], 'quantity_mode' => $report->quantity_mode, 'time_minutes' => $minutesById[$entry->id], 'dtr_entry_id' => $entry->id]);
                 } else {
                     $report->entries()->create([
                         'dtr_entry_id' => $entry->id,
                         'accomplishment_date' => $date,
                         'quantity' => $quantities[$entry->id],
+                        'quantity_mode' => $report->quantity_mode,
+                        'time_minutes' => $minutesById[$entry->id],
                         'task_accomplished' => null,
                         'sort_order' => $report->entries()->max('sort_order') + 1,
                     ]);

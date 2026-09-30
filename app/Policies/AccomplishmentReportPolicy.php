@@ -46,4 +46,14 @@ class AccomplishmentReportPolicy
     {
         return $this->update($user, $report);
     }
+
+    public function viewComputation(User $user, AccomplishmentReport $report): bool
+    {
+        return $this->view($user, $report) && ($user->hasPermission('view_ot_computation') || $user->hasPermission('edit_ot_computation'));
+    }
+
+    public function editComputation(User $user, AccomplishmentReport $report): bool
+    {
+        return $this->view($user, $report) && $user->hasPermission('edit_ot_computation');
+    }
 }

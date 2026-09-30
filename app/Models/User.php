@@ -6,6 +6,8 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -31,7 +33,34 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes, TwoFactorAuthenticatable;
+
+    protected static function booted(): void
+    {
+        static::created(function (User $user): void {
+            $staffRoleId = Role::query()->where('name', 'Staff')->value('id');
+            if ($staffRoleId !== null) {
+                $user->roles()->attach($staffRoleId);
+            }
+        });
+    }
+
+    /** @return BelongsToMany<Role, $this> */
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(Role::class);
+    }
+
+    public function hasPermission(string $key): bool
+    {
+        if ($this->is_admin) {
+            return true;
+        }
+
+        $this->loadMissing('roles.permissions');
+
+        return $this->roles->contains(fn (Role $role): bool => $role->permissions->contains('key', $key));
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -45,6 +74,7 @@ class User extends Authenticatable implements PasskeyUser
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'is_admin' => 'boolean',
+            'deleted_at' => 'datetime',
         ];
     }
 }

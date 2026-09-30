@@ -23,7 +23,7 @@ class AccomplishmentReportTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('reports.store'), [
             'report_month' => 9,
-            'report_year' => 2026,
+            'quantity_mode' => 'custom', 'report_year' => 2026,
             ...$signatories,
             'entries' => [['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => '']],
         ]);
@@ -31,19 +31,107 @@ class AccomplishmentReportTest extends TestCase
         $report = AccomplishmentReport::firstOrFail();
         $response->assertRedirect(route('reports.edit', $report));
         $this->assertSame('draft', $report->status);
-        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-04', 'quantity' => '3 documents']);
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-04', 'quantity_mode' => 'custom', 'time_minutes' => null, 'quantity' => '3 documents']);
+    }
+
+    public function test_time_quantity_preserves_actual_weekday_and_weekend_hours_and_ignores_submitted_result(): void
+    {
+        $user = User::factory()->create();
+        $signatories = $this->signatories($user);
+
+        $response = $this->actingAs($user)->post(route('reports.store'), [
+            'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories,
+            'entries' => [
+                ['accomplishment_date' => '2026-09-04', 'quantity_mode' => 'custom', 'time_minutes' => 135, 'quantity' => 'tampered', 'task_accomplished' => 'Friday task'],
+                ['accomplishment_date' => '2026-09-05', 'time_minutes' => 135, 'task_accomplished' => 'Saturday task'],
+            ],
+        ]);
+
+        $report = AccomplishmentReport::firstOrFail();
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertSame('time', $report->quantity_mode);
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 135, 'quantity' => '2.25 hours']);
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-05', 'quantity_mode' => 'time', 'time_minutes' => 135, 'quantity' => '2.25 hours']);
+        $this->get(route('reports.edit', $report))->assertInertia(fn (Assert $page) => $page
+            ->component('reports/editor')
+            ->where('report.quantity_mode', 'time')
+            ->where('report.entries.0.quantity_mode', 'time')
+            ->where('report.entries.0.time_minutes', 135)
+            ->etc());
+    }
+
+    public function test_time_quantity_preserves_actual_hours_when_date_changes(): void
+    {
+        $user = User::factory()->create();
+        $signatories = $this->signatories($user);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories]);
+        $entry = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 60, 'quantity' => '1.25 hours']);
+
+        $response = $this->actingAs($user)->put(route('reports.update', $report), [
+            'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories,
+            'entries' => [['id' => $entry->id, 'accomplishment_date' => '2026-09-06', 'time_minutes' => 60, 'quantity' => '1.25 hours']],
+        ]);
+
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertDatabaseHas('accomplishment_entries', ['id' => $entry->id, 'accomplishment_date' => '2026-09-06', 'quantity' => '1 hours']);
+    }
+
+    public function test_switching_to_custom_quantity_preserves_text_and_clears_time(): void
+    {
+        $user = User::factory()->create();
+        $signatories = $this->signatories($user);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories]);
+        $entry = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 60, 'quantity' => '1.25 hours']);
+
+        $response = $this->actingAs($user)->put(route('reports.update', $report), [
+            'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'custom', ...$signatories,
+            'entries' => [['id' => $entry->id, 'accomplishment_date' => '2026-09-04', 'time_minutes' => 60, 'quantity' => '3 documents']],
+        ]);
+
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertDatabaseHas('accomplishment_entries', ['id' => $entry->id, 'quantity_mode' => 'custom', 'time_minutes' => null, 'quantity' => '3 documents']);
+    }
+
+    public function test_time_quantity_requires_positive_minutes(): void
+    {
+        $user = User::factory()->create();
+        $signatories = $this->signatories($user);
+
+        $response = $this->actingAs($user)->post(route('reports.store'), [
+            'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories,
+            'entries' => [['accomplishment_date' => '2026-09-04', 'time_minutes' => 0]],
+        ]);
+
+        $response->assertSessionHasErrors('entries.0.time_minutes');
+        $this->assertDatabaseCount('accomplishment_reports', 0);
+    }
+
+    public function test_switching_an_imported_time_text_to_time_mode_uses_its_hours_and_minutes(): void
+    {
+        $user = User::factory()->create();
+        $signatories = $this->signatories($user);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
+        $entry = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '2h 10m']);
+
+        $response = $this->actingAs($user)->put(route('reports.update', $report), [
+            'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time', ...$signatories,
+            'entries' => [['id' => $entry->id, 'accomplishment_date' => '2026-09-04', 'quantity' => '2h 10m']],
+        ]);
+
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertDatabaseHas('accomplishment_entries', ['id' => $entry->id, 'quantity_mode' => 'time', 'time_minutes' => 130, 'quantity' => '2.1667 hours']);
     }
 
     public function test_reordered_entries_keep_their_dates_quantities_and_tasks(): void
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         $first = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'First task', 'sort_order' => 0]);
         $second = $report->entries()->create(['accomplishment_date' => '2026-09-05', 'quantity' => '1 module', 'task_accomplished' => 'Second task', 'sort_order' => 1]);
 
         $response = $this->actingAs($user)->put(route('reports.update', $report), [
-            'report_month' => 9, 'report_year' => 2026, ...$signatories,
+            'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories,
             'entries' => [
                 ['id' => $second->id, 'accomplishment_date' => '2026-09-05', 'quantity' => '1 module', 'task_accomplished' => 'Second task'],
                 ['id' => $first->id, 'accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'First task'],
@@ -61,12 +149,12 @@ class AccomplishmentReportTest extends TestCase
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         $first = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'First task', 'sort_order' => 0]);
         $second = $report->entries()->create(['accomplishment_date' => '2026-09-05', 'quantity' => '1 module', 'task_accomplished' => 'Second task', 'sort_order' => 1]);
 
         $response = $this->actingAs($user)->put(route('reports.update', $report), [
-            'report_month' => 9, 'report_year' => 2026, ...$signatories,
+            'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories,
             'entries' => [
                 ['id' => $first->id, 'accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'Second task'],
                 ['id' => $second->id, 'accomplishment_date' => '2026-09-05', 'quantity' => '1 module', 'task_accomplished' => 'First task'],
@@ -85,7 +173,7 @@ class AccomplishmentReportTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('reports.store'), [
             'report_month' => 9,
-            'report_year' => 2026,
+            'quantity_mode' => 'custom', 'report_year' => 2026,
             ...$signatories,
             'finalize' => true,
             'entries' => [['accomplishment_date' => '2026-09-04', 'quantity' => '2h 15m', 'task_accomplished' => '']],
@@ -99,7 +187,7 @@ class AccomplishmentReportTest extends TestCase
     {
         $owner = User::factory()->create();
         $other = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
 
         $this->actingAs($other)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
             ->component('reports/index')
@@ -136,7 +224,7 @@ class AccomplishmentReportTest extends TestCase
             ->etc());
 
         $response = $this->post(route('reports.store'), [
-            'report_month' => 9, 'report_year' => 2026, ...$otherSignatories,
+            'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$otherSignatories,
         ]);
 
         $response->assertRedirect();
@@ -182,7 +270,7 @@ class AccomplishmentReportTest extends TestCase
     {
         $owner = User::factory()->create();
         $admin = User::factory()->create(['is_admin' => true]);
-        $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
 
         $this->actingAs($admin)->get(route('reports.show', $report))->assertOk();
         $this->get(route('reports.edit', $report))->assertForbidden();
@@ -192,11 +280,11 @@ class AccomplishmentReportTest extends TestCase
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'Created the item library.']);
 
         $response = $this->actingAs($user)->put(route('reports.update', $report), [
-            'report_month' => 9, 'report_year' => 2026, ...$signatories, 'entries' => [], 'finalize' => true,
+            'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories, 'entries' => [], 'finalize' => true,
         ]);
 
         $response->assertSessionHasErrors('entries');
@@ -207,7 +295,7 @@ class AccomplishmentReportTest extends TestCase
     public function test_ai_suggestion_does_not_change_saved_task_until_user_accepts_it(): void
     {
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $entry = $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'fixed issue']);
         $this->mock(AccomplishmentAiService::class)->shouldReceive('improve')->once()->with('fixed issue')->andReturn('Fixed the reported issue.');
 
@@ -224,7 +312,7 @@ class AccomplishmentReportTest extends TestCase
         $signatories = $this->signatories($user);
 
         $response = $this->actingAs($user)->post(route('reports.store'), [
-            'report_month' => 9, 'report_year' => 2026, ...$signatories,
+            'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories,
             'entries' => [[
                 'accomplishment_date' => '2026-09-04', 'quantity' => '2h',
                 'task_accomplished' => 'Fixed the user module issue.',
@@ -247,7 +335,7 @@ class AccomplishmentReportTest extends TestCase
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'Created the item library.']);
 
         $response = $this->actingAs($user)->post(route('reports.generate', $report));
@@ -266,7 +354,7 @@ class AccomplishmentReportTest extends TestCase
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '3 documents', 'task_accomplished' => 'Created the item library.', 'sort_order' => 0]);
         $report->entries()->create(['accomplishment_date' => '2026-09-05', 'quantity' => '1 module', 'task_accomplished' => 'Prepared a & b records.', 'sort_order' => 1]);
 
@@ -315,7 +403,7 @@ class AccomplishmentReportTest extends TestCase
     {
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, ...$signatories]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
         for ($day = 1; $day <= 25; $day++) {
             $report->entries()->create([
                 'accomplishment_date' => sprintf('2026-09-%02d', $day),
@@ -329,7 +417,7 @@ class AccomplishmentReportTest extends TestCase
 
         $pdf = (new Parser)->parseContent($response->getContent());
         $this->assertGreaterThan(1, count($pdf->getPages()));
-        $text = $pdf->getText();
+        $text = preg_replace('/\s+/', ' ', $pdf->getText());
         $this->assertStringContainsString('accomplishment number 1', $text);
         $this->assertStringContainsString('accomplishment number 25', $text);
     }

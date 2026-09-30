@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
     FilePlus2,
     Files,
@@ -19,12 +19,14 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as accessControlIndex } from '@/routes/access-control';
 import {
     create as createReport,
     index as reportsIndex,
 } from '@/routes/reports';
 import { index as signatoriesIndex } from '@/routes/signatories';
 import { edit as templateEdit } from '@/routes/report-template';
+import { index as usersIndex } from '@/routes/users';
 import type { NavItem } from '@/types';
 
 const workspaceItems: NavItem[] = [
@@ -43,6 +45,23 @@ const setupItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { permissions } = usePage().props;
+    const configurationItems = permissions.manageAccess
+        ? [
+              ...setupItems,
+              {
+                  title: 'Users',
+                  href: usersIndex(),
+                  icon: UsersRound,
+              },
+              {
+                  title: 'Roles and permissions',
+                  href: accessControlIndex(),
+                  icon: UsersRound,
+              },
+          ]
+        : setupItems;
+
     return (
         <Sidebar
             collapsible="icon"
@@ -63,7 +82,7 @@ export function AppSidebar() {
 
             <SidebarContent className="gap-2 py-4">
                 <NavMain items={workspaceItems} label="Workspace" />
-                <NavMain items={setupItems} label="Configuration" />
+                <NavMain items={configurationItems} label="Configuration" />
             </SidebarContent>
 
             <SidebarFooter className="border-t border-sidebar-border p-3">

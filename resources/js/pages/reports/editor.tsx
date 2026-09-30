@@ -44,6 +44,7 @@ type Entry = {
     id?: number;
     accomplishment_date: string;
     quantity: string;
+    time_minutes: number | null;
     task_accomplished: string;
     original_task_accomplished: string;
     ai_suggested_task_accomplished: string;
@@ -53,6 +54,8 @@ type Report = {
     id: number;
     report_month: number;
     report_year: number;
+    quantity_mode: 'custom' | 'time';
+    hourly_rate: string | null;
     status: string;
     prepared_by_id: number | null;
     certified_by_id: number | null;
@@ -64,6 +67,7 @@ type Report = {
         id: number;
         accomplishment_date: string;
         quantity: string;
+        time_minutes: number | null;
         task_accomplished: string | null;
         original_task_accomplished: string | null;
         ai_suggested_task_accomplished: string | null;
@@ -85,12 +89,38 @@ type PageData = {
     csrfToken: string;
 };
 
+function calculatedQuantity(date: string, minutes: number | null): string {
+    if (!date || !minutes) return '';
+
+    return `${Number((minutes / 60).toFixed(4))} hours`;
+}
+
+function durationLabel(minutes: number): string {
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function importedMinutes(quantity: string): number | null {
+    const match = quantity
+        .trim()
+        .match(
+            /^(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:utes?)?)?)?$/i,
+        );
+    if (!match || (!match[1] && !match[2])) return null;
+
+    const minutes = Number(match[1] ?? 0) * 60 + Number(match[2] ?? 0);
+    return minutes > 0 && minutes <= 59999 ? minutes : null;
+}
+
 export default function ReportEditor({
     report,
     signatories,
+    canViewComputation,
+    canEditComputation,
 }: {
     report: Report | null;
     signatories: Record<string, Signatory[]>;
+    canViewComputation: boolean;
+    canEditComputation: boolean;
 }) {
     const { errors, flash, csrfToken } = usePage<PageData>().props;
     const [month, setMonth] = useState(
@@ -99,6 +129,8 @@ export default function ReportEditor({
     const [year, setYear] = useState(
         report?.report_year ?? new Date().getFullYear(),
     );
+    const [quantityMode, setQuantityMode] = useState<'custom' | 'time'>('time');
+    const [hourlyRate, setHourlyRate] = useState(report?.hourly_rate ?? '');
     const [prepared, setPrepared] = useState(report?.prepared_by_id ?? 0);
     const [certified, setCertified] = useState(report?.certified_by_id ?? 0);
     const [approved, setApproved] = useState(report?.approved_by_id ?? 0);
@@ -113,6 +145,7 @@ export default function ReportEditor({
             id: entry.id,
             accomplishment_date: entry.accomplishment_date.slice(0, 10),
             quantity: entry.quantity,
+            time_minutes: entry.time_minutes ?? importedMinutes(entry.quantity),
             task_accomplished: entry.task_accomplished ?? '',
             original_task_accomplished: entry.original_task_accomplished ?? '',
             ai_suggested_task_accomplished:
@@ -120,7 +153,9 @@ export default function ReportEditor({
             ai_enhanced: entry.ai_enhanced,
         })) ?? [],
     );
-    const [dirty, setDirty] = useState(false);
+    const [dirty, setDirty] = useState(
+        report !== null && report.quantity_mode !== 'time',
+    );
     const [busy, setBusy] = useState(false);
     const [dtrFile, setDtrFile] = useState<File | null>(null);
     const [aiIndex, setAiIndex] = useState<number | null>(null);
@@ -254,6 +289,8 @@ export default function ReportEditor({
         const payload = {
             report_month: month,
             report_year: year,
+            quantity_mode: quantityMode,
+            ...(canEditComputation ? { hourly_rate: hourlyRate || null } : {}),
             prepared_by_id: prepared,
             certified_by_id: certified,
             approved_by_id: approved,
@@ -327,12 +364,60 @@ export default function ReportEditor({
         );
     }
 
+    const overtimeTotals = entries.reduce(
+        (totals, entry) => {
+            if (!entry.accomplishment_date || !entry.time_minutes)
+                return totals;
+            const day = new Date(
+                `${entry.accomplishment_date}T00:00:00Z`,
+            ).getUTCDay();
+            const group =
+                day === 0 || day === 6 ? totals.weekend : totals.weekday;
+            group.hours += Math.floor(entry.time_minutes / 60);
+            group.minutes += entry.time_minutes % 60;
+            if (hourlyRate !== '') {
+                const rateCents = Math.round(Number(hourlyRate) * 100);
+                group.payNumerator +=
+                    entry.time_minutes *
+                    rateCents *
+                    (day === 0 || day === 6 ? 150 : 125);
+            }
+            return totals;
+        },
+        {
+            weekday: { hours: 0, minutes: 0, payNumerator: 0 },
+            weekend: { hours: 0, minutes: 0, payNumerator: 0 },
+        },
+    );
+    const weekdayMinutes =
+        overtimeTotals.weekday.hours * 60 + overtimeTotals.weekday.minutes;
+    const weekendMinutes =
+        overtimeTotals.weekend.hours * 60 + overtimeTotals.weekend.minutes;
+    const weekdayPay =
+        Math.round(overtimeTotals.weekday.payNumerator / 6000) / 100;
+    const weekendPay =
+        Math.round(overtimeTotals.weekend.payNumerator / 6000) / 100;
+    const payComplete =
+        hourlyRate !== '' && entries.every((entry) => !!entry.time_minutes);
+    const grossCents =
+        Math.round(weekdayPay * 100) + Math.round(weekendPay * 100);
+    const deductionCents = Math.round(grossCents * 0.2);
+    const netPay = (grossCents - deductionCents) / 100;
+
     const canGenerate =
         report &&
         !dirty &&
+        (quantityMode !== 'time' || !canViewComputation || payComplete) &&
         entries.length > 0 &&
         entries.every(
-            (entry) => entry.task_accomplished.trim() && entry.quantity.trim(),
+            (entry) =>
+                entry.task_accomplished.trim() &&
+                (quantityMode === 'time'
+                    ? calculatedQuantity(
+                          entry.accomplishment_date,
+                          entry.time_minutes,
+                      )
+                    : entry.quantity.trim()),
         );
 
     return (
@@ -575,11 +660,41 @@ export default function ReportEditor({
                                 Accomplishments
                             </h2>
                             <p className="text-sm text-muted-foreground">
-                                Enter any quantity, such as 2h 15m, 3 documents,
-                                or 1 module. Drag a task onto another task to
-                                place it on the correct date. Filled tasks swap
-                                places.
+                                Drag a task onto another task to place it on the
+                                correct date. Filled tasks swap places.
                             </p>
+                        </div>
+                        <div className="w-full sm:w-44">
+                            <Label htmlFor="report-quantity-mode">
+                                Quantity type for all
+                            </Label>
+                            <select
+                                id="report-quantity-mode"
+                                className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
+                                value={quantityMode}
+                                onChange={(event) => {
+                                    const nextMode = event.target.value as
+                                        | 'custom'
+                                        | 'time';
+                                    if (nextMode === 'time') {
+                                        setEntries((current) =>
+                                            current.map((entry) => ({
+                                                ...entry,
+                                                time_minutes:
+                                                    entry.time_minutes ??
+                                                    importedMinutes(
+                                                        entry.quantity,
+                                                    ),
+                                            })),
+                                        );
+                                    }
+                                    setQuantityMode(nextMode);
+                                    setDirty(true);
+                                }}
+                            >
+                                <option value="time">Time based</option>
+                                <option value="custom">Custom text</option>
+                            </select>
                         </div>
                         <div className="flex gap-2">
                             <Button
@@ -608,6 +723,7 @@ export default function ReportEditor({
                                             key: crypto.randomUUID(),
                                             accomplishment_date: '',
                                             quantity: '',
+                                            time_minutes: null,
                                             task_accomplished: '',
                                             original_task_accomplished: '',
                                             ai_suggested_task_accomplished: '',
@@ -621,6 +737,27 @@ export default function ReportEditor({
                             </Button>
                         </div>
                     </div>
+                    {quantityMode === 'time' && canViewComputation && (
+                        <div className="mb-4 max-w-xs">
+                            <Label htmlFor="report-hourly-rate">
+                                Hourly rate for all records
+                            </Label>
+                            <Input
+                                id="report-hourly-rate"
+                                type="number"
+                                min="0"
+                                max="99999999.99"
+                                step="0.01"
+                                value={hourlyRate}
+                                placeholder="Enter hourly rate"
+                                readOnly={!canEditComputation}
+                                onChange={(event) => {
+                                    setHourlyRate(event.target.value);
+                                    setDirty(true);
+                                }}
+                            />
+                        </div>
+                    )}
                     <div className="space-y-3">
                         {entries.length === 0 && (
                             <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -631,7 +768,7 @@ export default function ReportEditor({
                         {entries.map((entry, index) => (
                             <div
                                 key={entry.key}
-                                className="grid gap-3 rounded-lg border p-3 md:grid-cols-[150px_110px_1fr_auto]"
+                                className="grid gap-3 rounded-lg border p-3 md:grid-cols-[150px_290px_1fr_auto]"
                             >
                                 <div>
                                     <Label>Date</Label>
@@ -648,15 +785,83 @@ export default function ReportEditor({
                                 </div>
                                 <div>
                                     <Label>Quantity</Label>
-                                    <Input
-                                        value={entry.quantity}
-                                        onChange={(event) =>
-                                            editEntry(index, {
-                                                quantity: event.target.value,
-                                            })
-                                        }
-                                        placeholder="e.g. 2h 15m or 3 documents"
-                                    />
+                                    {quantityMode === 'time' ? (
+                                        <>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    aria-label="Hours"
+                                                    type="number"
+                                                    min="0"
+                                                    max="999"
+                                                    value={Math.floor(
+                                                        (entry.time_minutes ??
+                                                            0) / 60,
+                                                    )}
+                                                    onChange={(event) =>
+                                                        editEntry(index, {
+                                                            time_minutes:
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ) *
+                                                                    60 +
+                                                                ((entry.time_minutes ??
+                                                                    0) %
+                                                                    60),
+                                                        })
+                                                    }
+                                                />
+                                                <Input
+                                                    aria-label="Minutes"
+                                                    type="number"
+                                                    min="0"
+                                                    max="59"
+                                                    value={
+                                                        (entry.time_minutes ??
+                                                            0) % 60
+                                                    }
+                                                    onChange={(event) =>
+                                                        editEntry(index, {
+                                                            time_minutes:
+                                                                Math.floor(
+                                                                    (entry.time_minutes ??
+                                                                        0) / 60,
+                                                                ) *
+                                                                    60 +
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ),
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Hours + minutes ·{' '}
+                                                {calculatedQuantity(
+                                                    entry.accomplishment_date,
+                                                    entry.time_minutes,
+                                                ) ||
+                                                    'Select a date and enter time'}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Weekdays: hourly rate × 125% ·
+                                                Weekends: hourly rate × 150%
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <Input
+                                            aria-label="Quantity"
+                                            value={entry.quantity}
+                                            onChange={(event) =>
+                                                editEntry(index, {
+                                                    quantity:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            placeholder="e.g. 3 documents"
+                                        />
+                                    )}
                                 </div>
                                 <div>
                                     <div
@@ -801,6 +1006,74 @@ export default function ReportEditor({
                             </div>
                         ))}
                     </div>
+                    {quantityMode === 'time' && canViewComputation && (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-lg border bg-muted/30 p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Weekdays · OT Hour (25%) · ×125%
+                                </p>
+                                <p className="text-lg font-semibold">
+                                    {durationLabel(weekdayMinutes)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Hours: {overtimeTotals.weekday.hours} ·
+                                    Minutes: {overtimeTotals.weekday.minutes}
+                                </p>
+                                <p>
+                                    Gross OT pay:{' '}
+                                    {payComplete ? weekdayPay.toFixed(2) : '—'}
+                                </p>
+                            </div>
+                            <div className="rounded-lg border bg-muted/30 p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Weekends · OT Hour (50%) · ×150%
+                                </p>
+                                <p className="text-lg font-semibold">
+                                    {durationLabel(weekendMinutes)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Hours: {overtimeTotals.weekend.hours} ·
+                                    Minutes: {overtimeTotals.weekend.minutes}
+                                </p>
+                                <p>
+                                    Gross OT pay:{' '}
+                                    {payComplete ? weekendPay.toFixed(2) : '—'}
+                                </p>
+                            </div>
+                            <div className="rounded-lg border bg-primary/5 p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Total OT time
+                                </p>
+                                <p className="text-lg font-semibold">
+                                    {durationLabel(
+                                        weekdayMinutes + weekendMinutes,
+                                    )}
+                                </p>
+                                <p>
+                                    Gross OT pay:{' '}
+                                    {payComplete
+                                        ? (grossCents / 100).toFixed(2)
+                                        : '—'}
+                                </p>
+                                <p>
+                                    Deduction (20%):{' '}
+                                    {payComplete
+                                        ? (deductionCents / 100).toFixed(2)
+                                        : '—'}
+                                </p>
+                                <p>
+                                    Net OT pay:{' '}
+                                    {payComplete ? netPay.toFixed(2) : '—'}
+                                </p>
+                                {!payComplete && (
+                                    <p>
+                                        Enter the report hourly rate to
+                                        calculate pay.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </section>
                 <div className="flex flex-wrap gap-2">
                     <Button

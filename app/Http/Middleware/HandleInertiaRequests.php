@@ -41,6 +41,11 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'permissions' => $request->user() ? [
+                'manageAccess' => ! $request->session()->has('impersonator_id') && $request->user()->hasPermission('manage_access'),
+                'viewComputation' => $request->user()->hasPermission('view_ot_computation') || $request->user()->hasPermission('edit_ot_computation'),
+            ] : ['manageAccess' => false, 'viewComputation' => false],
+            'impersonation' => $request->session()->has('impersonator_id') && $request->user() ? ['name' => $request->user()->name] : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'csrfToken' => csrf_token(),
             'flash' => [

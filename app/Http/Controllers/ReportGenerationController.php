@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AccomplishmentReport;
 use App\Models\ReportTemplate;
 use App\Services\Accomplishments\DocxReportWriter;
+use App\Services\Accomplishments\OvertimePayCalculator;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\Response;
@@ -15,6 +16,8 @@ use Illuminate\View\View;
 
 class ReportGenerationController extends Controller
 {
+    public function __construct(private OvertimePayCalculator $calculator) {}
+
     public function preview(AccomplishmentReport $report): View
     {
         Gate::authorize('view', $report);
@@ -65,7 +68,9 @@ class ReportGenerationController extends Controller
         $isDefaultOffice = $template->office_name === 'Provincial Information and Communications Technology Office';
 
         return [
+            'canViewComputation' => Gate::allows('viewComputation', $report),
             'report' => $report,
+            'overtimePay' => $this->calculator->calculate($report),
             'template' => $template,
             'preview' => $preview,
             'leftLogo' => $this->logoData($template->left_logo_path, $isDefaultOffice ? 'province-seal.png' : null),
@@ -101,6 +106,10 @@ class ReportGenerationController extends Controller
 
         if ($report->entries->isEmpty() || $report->entries->contains(fn ($entry) => trim((string) $entry->task_accomplished) === '' || trim((string) $entry->quantity) === '')) {
             throw ValidationException::withMessages(['entries' => 'All accomplishments need a task and quantity before generating a report.']);
+        }
+
+        if (! $this->calculator->calculate($report)['complete']) {
+            throw ValidationException::withMessages(['entries' => 'Enter hours, minutes, and the report hourly rate before generating.']);
         }
 
         foreach (['prepared', 'certified', 'approved'] as $role) {

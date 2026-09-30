@@ -20,7 +20,7 @@ class DtrImportTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $pdf = new Dompdf;
         $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>September 2026</p><p>4 07:44 12:01 12:53 07:15 OT 2h 15m</p>');
         $pdf->render();
@@ -37,7 +37,7 @@ class DtrImportTest extends TestCase
     public function test_review_page_sends_attendance_rows_without_raw_parsed_pdf_data(): void
     {
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $import = DtrImport::create([
             'user_id' => $user->id,
             'accomplishment_report_id' => $report->id,
@@ -63,7 +63,7 @@ class DtrImportTest extends TestCase
     public function test_reviewed_overtime_import_skips_existing_date_by_default(): void
     {
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity' => '2 documents', 'task_accomplished' => 'Existing task']);
         $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('a', 64)]);
         $first = $import->entries()->create(['work_date' => '2026-09-04', 'overtime_minutes' => 135]);
@@ -77,10 +77,55 @@ class DtrImportTest extends TestCase
         $this->assertDatabaseCount('accomplishment_entries', 2);
     }
 
+    public function test_time_based_import_uses_dtr_minutes_for_weekday_and_weekend_quantities(): void
+    {
+        $user = User::factory()->create();
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time']);
+        $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('e', 64)]);
+        $weekday = $import->entries()->create(['work_date' => '2026-09-04', 'overtime_minutes' => 130]);
+        $weekend = $import->entries()->create(['work_date' => '2026-09-05', 'overtime_minutes' => 130]);
+
+        $response = $this->actingAs($user)->post(route('reports.dtr.commit', [$report, $import]), ['entry_ids' => [$weekday->id, $weekend->id], 'duplicate_action' => 'skip']);
+
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 130, 'quantity' => '2.1667 hours']);
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-05', 'quantity_mode' => 'time', 'time_minutes' => 130, 'quantity' => '2.1667 hours']);
+    }
+
+    public function test_time_based_import_requires_manual_quantity_to_be_time(): void
+    {
+        $user = User::factory()->create();
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time']);
+        $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('f', 64)]);
+        $ordinaryDay = $import->entries()->create(['work_date' => '2026-09-05']);
+
+        $response = $this->actingAs($user)->post(route('reports.dtr.commit', [$report, $import]), [
+            'entry_ids' => [$ordinaryDay->id], 'duplicate_action' => 'skip', 'manual_quantities' => [$ordinaryDay->id => '3 documents'],
+        ]);
+
+        $response->assertSessionHasErrors('manual_quantities.'.$ordinaryDay->id);
+        $this->assertDatabaseCount('accomplishment_entries', 0);
+    }
+
+    public function test_time_based_import_accepts_manual_hours_and_minutes_for_ordinary_day(): void
+    {
+        $user = User::factory()->create();
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time']);
+        $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('g', 64)]);
+        $ordinaryDay = $import->entries()->create(['work_date' => '2026-09-05']);
+
+        $response = $this->actingAs($user)->post(route('reports.dtr.commit', [$report, $import]), [
+            'entry_ids' => [$ordinaryDay->id], 'duplicate_action' => 'skip', 'manual_quantities' => [$ordinaryDay->id => '2h 10m'],
+        ]);
+
+        $response->assertRedirect(route('reports.edit', $report));
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-05', 'quantity_mode' => 'time', 'time_minutes' => 130, 'quantity' => '2.1667 hours']);
+    }
+
     public function test_selected_ordinary_day_requires_manual_quantity(): void
     {
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('b', 64)]);
         $ordinaryDay = $import->entries()->create(['work_date' => '2026-09-05']);
 
@@ -93,7 +138,7 @@ class DtrImportTest extends TestCase
     public function test_selected_ordinary_day_accepts_free_text_quantity(): void
     {
         $user = User::factory()->create();
-        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
         $import = DtrImport::create(['user_id' => $user->id, 'accomplishment_report_id' => $report->id, 'employee_name' => 'Raymart N. Itanong', 'month' => 9, 'year' => 2026, 'original_filename' => 'dtr.pdf', 'file_path' => 'dtr-imports/test.pdf', 'file_hash' => str_repeat('c', 64)]);
         $ordinaryDay = $import->entries()->create(['work_date' => '2026-09-05']);
 

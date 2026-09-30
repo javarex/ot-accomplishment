@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 class ReportWriter
 {
@@ -17,6 +18,7 @@ class ReportWriter
         $rules = [
             'report_month' => ['required', 'integer', 'between:1,12'],
             'report_year' => ['required', 'integer', 'between:2000,2100'],
+            'quantity_mode' => ['sometimes', Rule::in(['custom', 'time'])],
             'prepared_by_id' => ['required', 'integer', Rule::exists('signatories', 'id')->where('signatory_type', 'prepared_by')],
             'certified_by_id' => ['required', 'integer', Rule::exists('signatories', 'id')->where('signatory_type', 'certified_correct')],
             'approved_by_id' => ['required', 'integer', Rule::exists('signatories', 'id')->where('signatory_type', 'approved')],
@@ -29,7 +31,9 @@ class ReportWriter
             'entries' => ['array'],
             'entries.*.id' => ['nullable', 'integer'],
             'entries.*.accomplishment_date' => ['required', 'date_format:Y-m-d', 'distinct'],
-            'entries.*.quantity' => ['required', 'string', 'max:255'],
+            'entries.*.quantity' => ['nullable', 'string', 'max:255'],
+            'hourly_rate' => ['nullable', 'numeric', 'decimal:0,2', 'between:0,99999999.99'],
+            'entries.*.time_minutes' => ['nullable', 'integer', 'between:1,59999'],
             'entries.*.task_accomplished' => [$finalize ? 'required' : 'nullable', 'string', 'max:5000'],
             'entries.*.original_task_accomplished' => ['nullable', 'string', 'max:5000'],
             'entries.*.ai_suggested_task_accomplished' => ['nullable', 'string', 'max:5000'],
@@ -37,6 +41,11 @@ class ReportWriter
         ];
 
         $data = Validator::make($input, $rules)->validate();
+        $data['quantity_mode'] = $data['quantity_mode'] ?? ($report ? $report->quantity_mode : 'time');
+        $data['hourly_rate'] = array_key_exists('hourly_rate', $data) ? $data['hourly_rate'] : $report?->hourly_rate;
+        if ($finalize && $data['quantity_mode'] === 'time' && $data['hourly_rate'] === null) {
+            throw ValidationException::withMessages(['hourly_rate' => 'Enter an hourly rate before finalizing.']);
+        }
         $entries = $data['entries'] ?? [];
 
         if ($finalize && $entries === [] && (! $report || ! $report->entries()->exists())) {
@@ -50,16 +59,29 @@ class ReportWriter
                 throw ValidationException::withMessages(["entries.$index.accomplishment_date" => 'The date must be within the reporting period.']);
             }
 
-            $entry['quantity'] = trim($entry['quantity']);
-            if ($entry['quantity'] === '') {
-                throw ValidationException::withMessages(["entries.$index.quantity" => 'Enter a quantity.']);
+            if ($data['quantity_mode'] === 'time') {
+                if (! isset($entry['time_minutes'])) {
+                    try {
+                        $entry['time_minutes'] = OvertimeQuantity::parse((string) ($entry['quantity'] ?? ''));
+                    } catch (InvalidArgumentException) {
+                        throw ValidationException::withMessages(["entries.$index.time_minutes" => 'Enter hours and minutes.']);
+                    }
+                }
+
+                $entry['quantity'] = OvertimeQuantity::hours($entry['time_minutes']);
+            } else {
+                $entry['quantity'] = trim($entry['quantity'] ?? '');
+                $entry['time_minutes'] = null;
+                if ($entry['quantity'] === '') {
+                    throw ValidationException::withMessages(["entries.$index.quantity" => 'Enter a quantity.']);
+                }
             }
         }
         unset($entry);
 
         return DB::transaction(function () use ($report, $ownerId, $data, $entries, $finalize): AccomplishmentReport {
             $report ??= new AccomplishmentReport(['user_id' => $ownerId]);
-            $report->fill(collect($data)->only(['report_month', 'report_year', 'prepared_by_id', 'certified_by_id', 'approved_by_id', 'prepared_name', 'prepared_position', 'certified_name', 'certified_position', 'approved_name', 'approved_position'])->all());
+            $report->fill(collect($data)->only(['report_month', 'report_year', 'quantity_mode', 'hourly_rate', 'prepared_by_id', 'certified_by_id', 'approved_by_id', 'prepared_name', 'prepared_position', 'certified_name', 'certified_position', 'approved_name', 'approved_position'])->all());
             $report->status = $finalize ? AccomplishmentReport::FINALIZED : AccomplishmentReport::DRAFT;
             $report->generated_at = null;
             $report->save();
@@ -76,6 +98,8 @@ class ReportWriter
                 $item->fill([
                     'accomplishment_date' => $entry['accomplishment_date'],
                     'quantity' => $entry['quantity'],
+                    'quantity_mode' => $data['quantity_mode'],
+                    'time_minutes' => $entry['time_minutes'],
                     'task_accomplished' => $entry['task_accomplished'] ?? null,
                     'original_task_accomplished' => $entry['original_task_accomplished'] ?? null,
                     'ai_suggested_task_accomplished' => $entry['ai_suggested_task_accomplished'] ?? null,

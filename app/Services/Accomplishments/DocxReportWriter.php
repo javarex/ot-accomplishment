@@ -32,21 +32,30 @@ class DocxReportWriter
         $body = $this->paragraph((string) $template->report_title, 'center', 24, true, 220)
             .$this->paragraph(CarbonImmutable::create($report->report_year, $report->report_month, 1)->format('F Y'), 'center', 24, false, 180);
 
-        $body .= $this->table([1705, 1530, 6115]);
+        $canViewComputation = $data['canViewComputation'];
+        $body .= $this->table($canViewComputation ? [1705, 1530, 1300, 4815] : [1705, 1530, 6115]);
         $body .= $this->row([
             $this->cell($this->paragraph('DATE', 'center'), 1705, true),
             $this->cell($this->paragraph('QUANTITY', 'center'), 1530, true),
-            $this->cell($this->paragraph('TASK ACCOMPLISHED', 'center'), 6115, true),
+            ...($canViewComputation ? [$this->cell($this->paragraph('HOURLY RATE', 'center'), 1300, true)] : []),
+            $this->cell($this->paragraph('TASK ACCOMPLISHED', 'center'), $canViewComputation ? 4815 : 6115, true),
         ], true);
         foreach ($report->entries as $entry) {
             $body .= $this->row([
                 $this->cell($this->paragraph(CarbonImmutable::parse($entry->accomplishment_date)->format('F j, Y')), 1705),
                 $this->cell($this->paragraph((string) $entry->quantity, 'center'), 1530),
-                $this->cell($this->paragraph((string) $entry->task_accomplished), 6115),
+                ...($canViewComputation ? [$this->cell($this->paragraph((string) ($report->hourly_rate ?? '—'), 'center'), 1300)] : []),
+                $this->cell($this->paragraph((string) $entry->task_accomplished), $canViewComputation ? 4815 : 6115),
             ]);
         }
-        $body .= '</w:tbl>'
-            .$this->paragraph((string) $template->certification_statement, 'both', 24, false, 260);
+        $body .= '</w:tbl>';
+        if ($canViewComputation && $report->quantity_mode === 'time') {
+            $pay = $data['overtimePay'];
+            $body .= $this->paragraph('Gross OT pay: '.number_format($pay['gross_cents'] / 100, 2), 'right')
+                .$this->paragraph('Deduction (20%): '.number_format($pay['deduction_cents'] / 100, 2), 'right')
+                .$this->paragraph('Net OT pay: '.number_format($pay['net_cents'] / 100, 2), 'right');
+        }
+        $body .= $this->paragraph((string) $template->certification_statement, 'both', 24, false, 260);
 
         $body .= $this->table([4680, 4680], false)
             .$this->row([

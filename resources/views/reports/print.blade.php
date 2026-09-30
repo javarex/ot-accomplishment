@@ -51,13 +51,20 @@
 <h1>{{ $template->report_title }}</h1>
 <div class="period">{{ \Carbon\CarbonImmutable::create($report->report_year, $report->report_month, 1)->format('F Y') }}</div>
 <table class="report-table">
-    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th><th>TASK ACCOMPLISHED</th></tr></thead>
+    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation)<th style="width: 14%">HOURLY RATE</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
     <tbody>
     @foreach ($report->entries as $entry)
-        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity }}</td><td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
+        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity }}</td>@if ($canViewComputation)<td>{{ $report->hourly_rate ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
     @endforeach
     </tbody>
 </table>
+@if ($canViewComputation && $report->quantity_mode === 'time')
+    @if ($overtimePay['complete'])
+        <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+    @else
+        <p>Enter an hourly rate for the report to calculate pay.</p>
+    @endif
+@endif
 <div class="certification">{{ $template->certification_statement }}</div>
 <table class="signatories"><tr>
     <td><div class="signatory-label">Prepared by:</div><div class="signatory-name">{{ $report->prepared_name ?: $report->preparedBy?->name }}</div><div class="signatory-position">{{ $report->prepared_position ?: $report->preparedBy?->position }}</div></td>

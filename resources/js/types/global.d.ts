@@ -12,6 +12,8 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            impersonation: { name: string } | null;
+            permissions: { manageAccess: boolean; viewComputation: boolean };
             [key: string]: unknown;
         };
     }

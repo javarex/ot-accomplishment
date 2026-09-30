@@ -38,4 +38,9 @@ class OvertimeQuantity
 
         return $hours.'h'.($remaining > 0 ? ' '.$remaining.'m' : '');
     }
+
+    public static function hours(int $minutes): string
+    {
+        return rtrim(rtrim(number_format($minutes / 60, 4, '.', ''), '0'), '.').' hours';
+    }
 }

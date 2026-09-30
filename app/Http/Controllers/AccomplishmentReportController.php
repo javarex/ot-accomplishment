@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AccomplishmentReport;
 use App\Models\Signatory;
+use App\Services\Accomplishments\OvertimePayCalculator;
 use App\Services\Accomplishments\ReportWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,12 +30,18 @@ class AccomplishmentReportController extends Controller
         return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id]);
     }
 
-    public function show(AccomplishmentReport $report): Response
+    public function show(AccomplishmentReport $report, OvertimePayCalculator $calculator): Response
     {
         Gate::authorize('view', $report);
         $report->load(['user:id,name', 'entries', 'preparedBy', 'certifiedBy', 'approvedBy']);
+        $canViewComputation = Gate::allows('viewComputation', $report);
+        $overtimePay = $canViewComputation ? $calculator->calculate($report) : null;
+        if (! $canViewComputation) {
+            $report->makeHidden('hourly_rate');
+            $report->entries->each->makeHidden('hourly_rate');
+        }
 
-        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report)]);
+        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report), 'canSetHourlyRate' => Gate::allows('editComputation', $report), 'canViewComputation' => $canViewComputation, 'overtimePay' => $overtimePay]);
     }
 
     public function create(Request $request): Response
@@ -43,6 +50,8 @@ class AccomplishmentReportController extends Controller
 
         return Inertia::render('reports/editor', [
             'report' => null,
+            'canViewComputation' => $request->user()->hasPermission('view_ot_computation') || $request->user()->hasPermission('edit_ot_computation'),
+            'canEditComputation' => $request->user()->hasPermission('edit_ot_computation'),
             'signatories' => $this->signatories(),
         ]);
     }
@@ -50,6 +59,9 @@ class AccomplishmentReportController extends Controller
     public function store(Request $request, ReportWriter $writer): RedirectResponse
     {
         Gate::authorize('create', AccomplishmentReport::class);
+        if ($request->exists('hourly_rate') && ! $request->user()->hasPermission('edit_ot_computation')) {
+            abort(403);
+        }
         $report = $writer->save(null, $request->user()->id, $request->all());
 
         return redirect()->route('reports.edit', $report)->with('status', 'Report saved.');
@@ -62,8 +74,16 @@ class AccomplishmentReportController extends Controller
             ->select(['id', 'accomplishment_report_id', 'original_filename', 'import_status'])
             ->latest()]);
 
+        $canViewComputation = Gate::allows('viewComputation', $report);
+        if (! $canViewComputation) {
+            $report->makeHidden('hourly_rate');
+            $report->entries->each->makeHidden('hourly_rate');
+        }
+
         return Inertia::render('reports/editor', [
             'report' => $report,
+            'canViewComputation' => $canViewComputation,
+            'canEditComputation' => Gate::allows('editComputation', $report),
             'signatories' => $this->signatories(array_filter([$report->prepared_by_id, $report->certified_by_id, $report->approved_by_id])),
         ]);
     }
@@ -71,9 +91,21 @@ class AccomplishmentReportController extends Controller
     public function update(Request $request, AccomplishmentReport $report, ReportWriter $writer): RedirectResponse
     {
         Gate::authorize('update', $report);
+        if ($request->exists('hourly_rate') && ! Gate::allows('editComputation', $report)) {
+            abort(403);
+        }
         $writer->save($report, $report->user_id, $request->all());
 
         return redirect()->route('reports.edit', $report)->with('status', 'Report saved.');
+    }
+
+    public function updateHourlyRate(Request $request, AccomplishmentReport $report): RedirectResponse
+    {
+        abort_unless(Gate::allows('editComputation', $report), 403);
+        $data = $request->validate(['hourly_rate' => ['required', 'numeric', 'decimal:0,2', 'between:0,99999999.99']]);
+        $report->update($data);
+
+        return back()->with('status', 'Hourly rate updated.');
     }
 
     public function destroy(AccomplishmentReport $report): RedirectResponse
