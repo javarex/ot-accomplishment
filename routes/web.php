@@ -27,6 +27,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('access-control/users/{user}/roles', [AccessControlController::class, 'updateUserRoles'])->name('access-control.users.roles.update');
     Route::resource('reports', AccomplishmentReportController::class);
     Route::put('reports/{report}/hourly-rate', [AccomplishmentReportController::class, 'updateHourlyRate'])->name('reports.hourly-rate.update');
+    Route::put('reports/{report}/daily-rate', [AccomplishmentReportController::class, 'updateDailyRate'])->name('reports.daily-rate.update');
     Route::get('reports/{report}/preview', [ReportGenerationController::class, 'preview'])->name('reports.preview');
     Route::post('reports/{report}/generate', [ReportGenerationController::class, 'generate'])->name('reports.generate');
     Route::post('reports/{report}/generate-docx', [ReportGenerationController::class, 'generateDocx'])->name('reports.generate-docx');

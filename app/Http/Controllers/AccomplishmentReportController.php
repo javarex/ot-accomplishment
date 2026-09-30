@@ -42,7 +42,7 @@ class AccomplishmentReportController extends Controller
         $canViewComputation = Gate::allows('viewComputation', $report);
         $overtimePay = $canViewComputation ? $calculator->calculate($report) : null;
         if (! $canViewComputation) {
-            $report->makeHidden('hourly_rate');
+            $report->makeHidden(['hourly_rate', 'daily_rate', 'jo_tax_percent']);
             $report->entries->each->makeHidden('hourly_rate');
         }
 
@@ -64,7 +64,7 @@ class AccomplishmentReportController extends Controller
     public function store(Request $request, ReportWriter $writer, DtrImportStager $stager): RedirectResponse
     {
         Gate::authorize('create', AccomplishmentReport::class);
-        if ($request->exists('hourly_rate') && ! $request->user()->hasPermission('edit_ot_computation')) {
+        if (($request->exists('hourly_rate') || $request->exists('daily_rate') || $request->exists('jo_tax_percent')) && ! $request->user()->hasPermission('edit_ot_computation')) {
             abort(403);
         }
         $dtrData = $request->validate([
@@ -152,7 +152,7 @@ class AccomplishmentReportController extends Controller
 
         $canViewComputation = Gate::allows('viewComputation', $report);
         if (! $canViewComputation) {
-            $report->makeHidden('hourly_rate');
+            $report->makeHidden(['hourly_rate', 'daily_rate', 'jo_tax_percent']);
             $report->entries->each->makeHidden('hourly_rate');
         }
 
@@ -167,7 +167,7 @@ class AccomplishmentReportController extends Controller
     public function update(Request $request, AccomplishmentReport $report, ReportWriter $writer): RedirectResponse
     {
         Gate::authorize('update', $report);
-        if ($request->exists('hourly_rate') && ! Gate::allows('editComputation', $report)) {
+        if (($request->exists('hourly_rate') || $request->exists('daily_rate') || $request->exists('jo_tax_percent')) && ! Gate::allows('editComputation', $report)) {
             abort(403);
         }
         $writer->save($report, $report->user_id, $request->all());
@@ -182,6 +182,18 @@ class AccomplishmentReportController extends Controller
         $report->update($data);
 
         return back()->with('status', 'Hourly rate updated.');
+    }
+
+    public function updateDailyRate(Request $request, AccomplishmentReport $report): RedirectResponse
+    {
+        abort_unless(Gate::allows('editComputation', $report), 403);
+        $data = $request->validate([
+            'daily_rate' => ['required', 'numeric', 'decimal:0,2', 'between:0,99999999.99'],
+            'jo_tax_percent' => ['sometimes', 'numeric', 'decimal:0,2', 'between:0,100'],
+        ]);
+        $report->update($data);
+
+        return back()->with('status', 'JO rate and tax updated.');
     }
 
     public function destroy(AccomplishmentReport $report): RedirectResponse

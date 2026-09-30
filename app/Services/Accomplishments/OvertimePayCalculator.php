@@ -17,7 +17,7 @@ class OvertimePayCalculator
             'weekend' => ['hours' => 0, 'minutes' => 0, 'total_minutes' => 0, 'gross_cents' => 0],
         ];
         $numerators = ['weekday' => 0, 'weekend' => 0];
-        $complete = $report->quantity_mode !== 'time' || $report->hourly_rate !== null;
+        $complete = $report->quantity_mode !== 'time' || ($report->is_jo ? $report->daily_rate !== null : $report->hourly_rate !== null);
 
         foreach ($report->entries as $entry) {
             if ($entry->quantity_mode !== 'time') {
@@ -31,14 +31,28 @@ class OvertimePayCalculator
             $groups[$group]['minutes'] += $minutes % 60;
             $groups[$group]['total_minutes'] += $minutes;
 
-            if ($report->hourly_rate === null || $minutes <= 0) {
+            if (($report->is_jo ? $report->daily_rate === null : $report->hourly_rate === null) || $minutes <= 0) {
                 $complete = false;
 
                 continue;
             }
 
-            $rateCents = (int) round($report->hourly_rate * 100);
-            $numerators[$group] += $minutes * $rateCents * ($weekend ? 150 : 125);
+            if (! $report->is_jo) {
+                $rateCents = (int) round($report->hourly_rate * 100);
+                $numerators[$group] += $minutes * $rateCents * ($weekend ? 150 : 125);
+            }
+        }
+
+        if ($report->is_jo) {
+            $totalMinutes = $groups['weekday']['total_minutes'] + $groups['weekend']['total_minutes'];
+            $dailyRateCents = (int) round((float) $report->daily_rate * 100);
+            $gross = (int) round($dailyRateCents * $totalMinutes / (8 * 60));
+            $groups['weekday']['gross_cents'] = (int) round($dailyRateCents * $groups['weekday']['total_minutes'] / (8 * 60));
+            $groups['weekend']['gross_cents'] = $gross - $groups['weekday']['gross_cents'];
+            $taxBasisPoints = (int) round((float) $report->jo_tax_percent * 100);
+            $deduction = (int) round($gross * $taxBasisPoints / 10000);
+
+            return [...$groups, 'complete' => $complete, 'gross_cents' => $gross, 'deduction_cents' => $deduction, 'net_cents' => $gross - $deduction];
         }
 
         foreach ($groups as $group => &$totals) {

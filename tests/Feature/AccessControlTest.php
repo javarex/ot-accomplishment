@@ -103,6 +103,29 @@ class AccessControlTest extends TestCase
         }
     }
 
+    public function test_jo_daily_rate_respects_computation_permissions(): void
+    {
+        $user = User::factory()->create();
+        $report = $this->report($user);
+        $report->update(['is_jo' => true, 'daily_rate' => '800.00', 'jo_tax_percent' => '7.50']);
+
+        $this->actingAs($user)->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('overtimePay', null)->missing('report.daily_rate')->missing('report.jo_tax_percent')->etc());
+        $this->get(route('reports.edit', $report))->assertInertia(fn (Assert $page) => $page
+            ->missing('report.daily_rate')->missing('report.jo_tax_percent')->etc());
+        $this->get(route('reports.preview', $report))->assertOk()->assertDontSee('DAILY RATE')->assertDontSee('JO pay');
+        $this->put(route('reports.update', $report), ['daily_rate' => '999.00'])->assertForbidden();
+        $this->put(route('reports.update', $report), ['jo_tax_percent' => '10.00'])->assertForbidden();
+        $this->put(route('reports.daily-rate.update', $report), ['daily_rate' => '999.00'])->assertForbidden();
+
+        $role = Role::create(['name' => 'JO Payroll Editor']);
+        $role->permissions()->sync([Permission::where('key', 'edit_ot_computation')->firstOrFail()->id]);
+        $user->roles()->attach($role);
+        $this->actingAs($user->fresh())->put(route('reports.daily-rate.update', $report), ['daily_rate' => '400.00', 'jo_tax_percent' => '10.00'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('400.00', $report->fresh()->daily_rate);
+        $this->assertSame('10.00', $report->fresh()->jo_tax_percent);
+    }
+
     public function test_viewer_role_grants_computation_visibility_without_access_management(): void
     {
         $admin = User::factory()->create(['is_admin' => true]);

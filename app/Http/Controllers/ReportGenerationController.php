@@ -109,7 +109,9 @@ class ReportGenerationController extends Controller
         }
 
         if (! $this->calculator->calculate($report)['complete']) {
-            throw ValidationException::withMessages(['entries' => 'Enter hours, minutes, and the report hourly rate before generating.']);
+            throw ValidationException::withMessages(['entries' => $report->is_jo
+                ? 'Enter hours, minutes, and the report daily rate before generating.'
+                : 'Enter hours, minutes, and the report hourly rate before generating.']);
         }
 
         foreach (['prepared', 'certified', 'approved'] as $role) {

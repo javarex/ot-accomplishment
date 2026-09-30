@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { edit, index, preview } from '@/routes/reports';
 import { update as updateHourlyRate } from '@/routes/reports/hourly-rate';
+import { update as updateDailyRate } from '@/routes/reports/daily-rate';
 
 type Signatory = { name: string; position: string } | null;
 type Report = {
@@ -14,6 +15,9 @@ type Report = {
     status: string;
     quantity_mode: 'custom' | 'time';
     hourly_rate: string | null;
+    is_jo: boolean;
+    daily_rate: string | null;
+    jo_tax_percent: string;
     user: { name: string };
     prepared_name: string | null;
     prepared_position: string | null;
@@ -69,13 +73,22 @@ export default function ReportShow({
     } | null;
 }) {
     const [hourlyRate, setHourlyRate] = useState(report.hourly_rate ?? '');
+    const [dailyRate, setDailyRate] = useState(report.daily_rate ?? '');
+    const [joTaxPercent, setJoTaxPercent] = useState(
+        report.jo_tax_percent ?? '0',
+    );
     const [savingRate, setSavingRate] = useState(false);
 
     function saveRate(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         router.put(
-            updateHourlyRate(report.id).url,
-            { hourly_rate: hourlyRate },
+            (report.is_jo
+                ? updateDailyRate(report.id)
+                : updateHourlyRate(report.id)
+            ).url,
+            report.is_jo
+                ? { daily_rate: dailyRate, jo_tax_percent: joTaxPercent || '0' }
+                : { hourly_rate: hourlyRate },
             {
                 onStart: () => setSavingRate(true),
                 onFinish: () => setSavingRate(false),
@@ -103,6 +116,7 @@ export default function ReportShow({
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             {period} · {report.user.name} · {report.status}
+                            {report.is_jo ? ' · JO' : ''}
                         </p>
                         {!canEdit && (
                             <p className="mt-2 text-sm font-medium">
@@ -128,15 +142,25 @@ export default function ReportShow({
                     overtimePay &&
                     report.quantity_mode === 'time' && (
                         <section className="rounded-lg border bg-card p-4">
-                            <p>Hourly rate: {report.hourly_rate ?? '—'}</p>
+                            <p>
+                                {report.is_jo ? 'Daily rate' : 'Hourly rate'}:{' '}
+                                {report.is_jo
+                                    ? (report.daily_rate ?? '—')
+                                    : (report.hourly_rate ?? '—')}
+                            </p>
+                            {report.is_jo && (
+                                <p>JO tax: {report.jo_tax_percent ?? '0'}%</p>
+                            )}
                             {canSetHourlyRate && (
                                 <form
                                     onSubmit={saveRate}
-                                    className="mt-3 flex max-w-sm items-end gap-2"
+                                    className="mt-3 flex max-w-xl flex-wrap items-end gap-2"
                                 >
-                                    <div className="flex-1">
+                                    <div className="min-w-40 flex-1">
                                         <Label htmlFor="report-rate">
-                                            Set report hourly rate
+                                            Set report{' '}
+                                            {report.is_jo ? 'daily' : 'hourly'}{' '}
+                                            rate
                                         </Label>
                                         <Input
                                             id="report-rate"
@@ -145,48 +169,112 @@ export default function ReportShow({
                                             max="99999999.99"
                                             step="0.01"
                                             required
-                                            value={hourlyRate}
+                                            value={
+                                                report.is_jo
+                                                    ? dailyRate
+                                                    : hourlyRate
+                                            }
                                             onChange={(event) =>
-                                                setHourlyRate(
-                                                    event.target.value,
-                                                )
+                                                report.is_jo
+                                                    ? setDailyRate(
+                                                          event.target.value,
+                                                      )
+                                                    : setHourlyRate(
+                                                          event.target.value,
+                                                      )
                                             }
                                         />
                                     </div>
+                                    {report.is_jo && (
+                                        <div className="min-w-32 flex-1">
+                                            <Label htmlFor="report-jo-tax">
+                                                JO tax (%)
+                                            </Label>
+                                            <Input
+                                                id="report-jo-tax"
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                value={joTaxPercent}
+                                                onChange={(event) =>
+                                                    setJoTaxPercent(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                    )}
                                     <Button type="submit" disabled={savingRate}>
-                                        Save rate
+                                        Save{' '}
+                                        {report.is_jo
+                                            ? 'JO pay settings'
+                                            : 'rate'}
                                     </Button>
                                 </form>
                             )}
-                            <p>
-                                Weekdays: hours × hourly rate × 125% · Weekends:
-                                hours × hourly rate × 150%
-                            </p>
+                            {report.is_jo ? (
+                                <p>
+                                    JO: daily rate ÷ 8 × total rendered hours ·
+                                    100% on every day
+                                </p>
+                            ) : (
+                                <p>
+                                    Weekdays: hours × hourly rate × 125% ·
+                                    Weekends: hours × hourly rate × 150%
+                                </p>
+                            )}
                             {overtimePay.complete ? (
                                 <>
                                     <p>
-                                        Gross OT pay:{' '}
+                                        {report.is_jo
+                                            ? 'Gross JO pay'
+                                            : 'Gross OT pay'}
+                                        :{' '}
                                         {(
                                             overtimePay.gross_cents / 100
                                         ).toFixed(2)}
                                     </p>
-                                    <p>
-                                        Deduction (20%):{' '}
-                                        {(
-                                            overtimePay.deduction_cents / 100
-                                        ).toFixed(2)}
-                                    </p>
-                                    <p>
-                                        Net OT pay:{' '}
-                                        {(overtimePay.net_cents / 100).toFixed(
-                                            2,
-                                        )}
-                                    </p>
+                                    {report.is_jo && (
+                                        <p>
+                                            JO tax (
+                                            {report.jo_tax_percent ?? '0'}%):{' '}
+                                            {(
+                                                overtimePay.deduction_cents /
+                                                100
+                                            ).toFixed(2)}
+                                        </p>
+                                    )}
+                                    {report.is_jo && (
+                                        <p>
+                                            Net JO pay:{' '}
+                                            {(
+                                                overtimePay.net_cents / 100
+                                            ).toFixed(2)}
+                                        </p>
+                                    )}
+                                    {!report.is_jo && (
+                                        <p>
+                                            Deduction (20%):{' '}
+                                            {(
+                                                overtimePay.deduction_cents /
+                                                100
+                                            ).toFixed(2)}
+                                        </p>
+                                    )}
+                                    {!report.is_jo && (
+                                        <p>
+                                            Net OT pay:{' '}
+                                            {(
+                                                overtimePay.net_cents / 100
+                                            ).toFixed(2)}
+                                        </p>
+                                    )}
                                 </>
                             ) : (
                                 <p>
-                                    Enter an hourly rate for the report to
-                                    calculate pay.
+                                    Enter a {report.is_jo ? 'daily' : 'hourly'}{' '}
+                                    rate for the report to calculate pay.
                                 </p>
                             )}
                         </section>
@@ -241,7 +329,11 @@ export default function ReportShow({
                                 <th className="p-3">Date</th>
                                 <th className="p-3">Quantity</th>
                                 {canViewComputation && (
-                                    <th className="p-3">Hourly rate</th>
+                                    <th className="p-3">
+                                        {report.is_jo
+                                            ? 'Daily rate'
+                                            : 'Hourly rate'}
+                                    </th>
                                 )}
                                 <th className="p-3">Task Accomplished</th>
                             </tr>
@@ -264,7 +356,9 @@ export default function ReportShow({
                                     <td className="p-3">{entry.quantity}</td>
                                     {canViewComputation && (
                                         <td className="p-3">
-                                            {report.hourly_rate ?? '—'}
+                                            {report.is_jo
+                                                ? (report.daily_rate ?? '—')
+                                                : (report.hourly_rate ?? '—')}
                                         </td>
                                     )}
                                     <td className="p-3 whitespace-pre-wrap">

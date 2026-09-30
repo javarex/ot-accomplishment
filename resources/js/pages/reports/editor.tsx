@@ -60,6 +60,9 @@ type Report = {
     report_year: number;
     quantity_mode: 'custom' | 'time';
     hourly_rate: string | null;
+    is_jo: boolean;
+    daily_rate: string | null;
+    jo_tax_percent: string;
     status: string;
     prepared_by_id: number | null;
     certified_by_id: number | null;
@@ -139,8 +142,15 @@ export default function ReportEditor({
     const [year, setYear] = useState(
         report?.report_year ?? new Date().getFullYear(),
     );
-    const [quantityMode, setQuantityMode] = useState<'custom' | 'time'>('time');
+    const [quantityMode, setQuantityMode] = useState<'custom' | 'time'>(
+        report?.quantity_mode ?? 'time',
+    );
     const [hourlyRate, setHourlyRate] = useState(report?.hourly_rate ?? '');
+    const [isJo, setIsJo] = useState(report?.is_jo ?? false);
+    const [dailyRate, setDailyRate] = useState(report?.daily_rate ?? '');
+    const [joTaxPercent, setJoTaxPercent] = useState(
+        report?.jo_tax_percent ?? '0',
+    );
     const [prepared, setPrepared] = useState(report?.prepared_by_id ?? 0);
     const [certified, setCertified] = useState(report?.certified_by_id ?? 0);
     const [approved, setApproved] = useState(report?.approved_by_id ?? 0);
@@ -163,9 +173,7 @@ export default function ReportEditor({
             ai_enhanced: entry.ai_enhanced,
         })) ?? [],
     );
-    const [dirty, setDirty] = useState(
-        report !== null && report.quantity_mode !== 'time',
-    );
+    const [dirty, setDirty] = useState(false);
     const [busy, setBusy] = useState(false);
     const [dtrFile, setDtrFile] = useState<File | null>(null);
     const dtrPreview = useHttp<{ dtr: File | null }, DtrPreview>({ dtr: null });
@@ -306,7 +314,14 @@ export default function ReportEditor({
             report_month: month,
             report_year: year,
             quantity_mode: quantityMode,
-            ...(canEditComputation ? { hourly_rate: hourlyRate || null } : {}),
+            is_jo: isJo,
+            ...(canEditComputation
+                ? {
+                      hourly_rate: hourlyRate || null,
+                      daily_rate: dailyRate || null,
+                      jo_tax_percent: joTaxPercent || '0',
+                  }
+                : {}),
             prepared_by_id: prepared,
             certified_by_id: certified,
             approved_by_id: approved,
@@ -437,7 +452,7 @@ export default function ReportEditor({
                 day === 0 || day === 6 ? totals.weekend : totals.weekday;
             group.hours += Math.floor(entry.time_minutes / 60);
             group.minutes += entry.time_minutes % 60;
-            if (hourlyRate !== '') {
+            if (!isJo && hourlyRate !== '') {
                 const rateCents = Math.round(Number(hourlyRate) * 100);
                 group.payNumerator +=
                     entry.time_minutes *
@@ -460,10 +475,20 @@ export default function ReportEditor({
     const weekendPay =
         Math.round(overtimeTotals.weekend.payNumerator / 6000) / 100;
     const payComplete =
-        hourlyRate !== '' && entries.every((entry) => !!entry.time_minutes);
-    const grossCents =
-        Math.round(weekdayPay * 100) + Math.round(weekendPay * 100);
-    const deductionCents = Math.round(grossCents * 0.2);
+        (isJo ? dailyRate !== '' : hourlyRate !== '') &&
+        entries.every((entry) => !!entry.time_minutes);
+    const grossCents = isJo
+        ? Math.round(
+              (Math.round(Number(dailyRate) * 100) *
+                  (weekdayMinutes + weekendMinutes)) /
+                  (8 * 60),
+          )
+        : Math.round(weekdayPay * 100) + Math.round(weekendPay * 100);
+    const deductionCents = isJo
+        ? Math.round(
+              (grossCents * Math.round(Number(joTaxPercent) * 100)) / 10000,
+          )
+        : Math.round(grossCents * 0.2);
     const netPay = (grossCents - deductionCents) / 100;
 
     const canGenerate =
@@ -817,25 +842,68 @@ export default function ReportEditor({
                             </Button>
                         </div>
                     </div>
-                    {quantityMode === 'time' && canViewComputation && (
-                        <div className="mb-4 max-w-xs">
-                            <Label htmlFor="report-hourly-rate">
-                                Hourly rate for all records
-                            </Label>
-                            <Input
-                                id="report-hourly-rate"
-                                type="number"
-                                min="0"
-                                max="99999999.99"
-                                step="0.01"
-                                value={hourlyRate}
-                                placeholder="Enter hourly rate"
-                                readOnly={!canEditComputation}
+                    {quantityMode === 'time' && (
+                        <label className="mb-4 flex items-center gap-2 text-sm font-medium">
+                            <input
+                                type="checkbox"
+                                checked={isJo}
                                 onChange={(event) => {
-                                    setHourlyRate(event.target.value);
+                                    setIsJo(event.target.checked);
                                     setDirty(true);
                                 }}
                             />
+                            JO (Job Order) · fixed 100% for every day
+                        </label>
+                    )}
+                    {quantityMode === 'time' && canViewComputation && (
+                        <div className="mb-4 flex flex-wrap gap-3">
+                            <div className="w-full max-w-xs">
+                                <Label htmlFor="report-rate">
+                                    {isJo
+                                        ? 'Daily rate for JO report'
+                                        : 'Hourly rate for all records'}
+                                </Label>
+                                <Input
+                                    id="report-rate"
+                                    type="number"
+                                    min="0"
+                                    max="99999999.99"
+                                    step="0.01"
+                                    value={isJo ? dailyRate : hourlyRate}
+                                    placeholder={
+                                        isJo
+                                            ? 'Enter daily rate'
+                                            : 'Enter hourly rate'
+                                    }
+                                    readOnly={!canEditComputation}
+                                    onChange={(event) => {
+                                        if (isJo)
+                                            setDailyRate(event.target.value);
+                                        else setHourlyRate(event.target.value);
+                                        setDirty(true);
+                                    }}
+                                />
+                            </div>
+                            {isJo && (
+                                <div className="w-full max-w-xs">
+                                    <Label htmlFor="report-jo-tax">
+                                        JO tax (%)
+                                    </Label>
+                                    <Input
+                                        id="report-jo-tax"
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        value={joTaxPercent}
+                                        readOnly={!canEditComputation}
+                                        onChange={(event) => {
+                                            setJoTaxPercent(event.target.value);
+                                            setDirty(true);
+                                        }}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                     <div className="space-y-3">
@@ -925,8 +993,9 @@ export default function ReportEditor({
                                                     'Select a date and enter time'}
                                             </p>
                                             <p className="text-xs text-muted-foreground">
-                                                Weekdays: hourly rate × 125% ·
-                                                Weekends: hourly rate × 150%
+                                                {isJo
+                                                    ? 'JO: daily rate ÷ 8 × rendered hours · 100% every day'
+                                                    : 'Weekdays: hourly rate × 125% · Weekends: hourly rate × 150%'}
                                             </p>
                                         </>
                                     ) : (
@@ -1088,41 +1157,55 @@ export default function ReportEditor({
                     </div>
                     {quantityMode === 'time' && canViewComputation && (
                         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-lg border bg-muted/30 p-3">
-                                <p className="text-xs text-muted-foreground">
-                                    Weekdays · OT Hour (25%) · ×125%
-                                </p>
-                                <p className="text-lg font-semibold">
-                                    {durationLabel(weekdayMinutes)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Hours: {overtimeTotals.weekday.hours} ·
-                                    Minutes: {overtimeTotals.weekday.minutes}
-                                </p>
-                                <p>
-                                    Gross OT pay:{' '}
-                                    {payComplete ? weekdayPay.toFixed(2) : '—'}
-                                </p>
-                            </div>
-                            <div className="rounded-lg border bg-muted/30 p-3">
-                                <p className="text-xs text-muted-foreground">
-                                    Weekends · OT Hour (50%) · ×150%
-                                </p>
-                                <p className="text-lg font-semibold">
-                                    {durationLabel(weekendMinutes)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Hours: {overtimeTotals.weekend.hours} ·
-                                    Minutes: {overtimeTotals.weekend.minutes}
-                                </p>
-                                <p>
-                                    Gross OT pay:{' '}
-                                    {payComplete ? weekendPay.toFixed(2) : '—'}
-                                </p>
-                            </div>
+                            {!isJo && (
+                                <>
+                                    <div className="rounded-lg border bg-muted/30 p-3">
+                                        <p className="text-xs text-muted-foreground">
+                                            Weekdays · OT Hour (25%) · ×125%
+                                        </p>
+                                        <p className="text-lg font-semibold">
+                                            {durationLabel(weekdayMinutes)}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Hours:{' '}
+                                            {overtimeTotals.weekday.hours} ·
+                                            Minutes:{' '}
+                                            {overtimeTotals.weekday.minutes}
+                                        </p>
+                                        <p>
+                                            Gross OT pay:{' '}
+                                            {payComplete
+                                                ? weekdayPay.toFixed(2)
+                                                : '—'}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-lg border bg-muted/30 p-3">
+                                        <p className="text-xs text-muted-foreground">
+                                            Weekends · OT Hour (50%) · ×150%
+                                        </p>
+                                        <p className="text-lg font-semibold">
+                                            {durationLabel(weekendMinutes)}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Hours:{' '}
+                                            {overtimeTotals.weekend.hours} ·
+                                            Minutes:{' '}
+                                            {overtimeTotals.weekend.minutes}
+                                        </p>
+                                        <p>
+                                            Gross OT pay:{' '}
+                                            {payComplete
+                                                ? weekendPay.toFixed(2)
+                                                : '—'}
+                                        </p>
+                                    </div>
+                                </>
+                            )}
                             <div className="rounded-lg border bg-primary/5 p-3">
                                 <p className="text-xs text-muted-foreground">
-                                    Total OT time
+                                    {isJo
+                                        ? 'Total JO time · 100%'
+                                        : 'Total OT time'}
                                 </p>
                                 <p className="text-lg font-semibold">
                                     {durationLabel(
@@ -1130,24 +1213,48 @@ export default function ReportEditor({
                                     )}
                                 </p>
                                 <p>
-                                    Gross OT pay:{' '}
+                                    {isJo ? 'Gross JO pay' : 'Gross OT pay'}:{' '}
                                     {payComplete
                                         ? (grossCents / 100).toFixed(2)
                                         : '—'}
                                 </p>
-                                <p>
-                                    Deduction (20%):{' '}
-                                    {payComplete
-                                        ? (deductionCents / 100).toFixed(2)
-                                        : '—'}
-                                </p>
-                                <p>
-                                    Net OT pay:{' '}
-                                    {payComplete ? netPay.toFixed(2) : '—'}
-                                </p>
+                                {!isJo && (
+                                    <p>
+                                        Deduction (20%):{' '}
+                                        {payComplete
+                                            ? (deductionCents / 100).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                )}
+                                {isJo && (
+                                    <p>
+                                        JO tax ({joTaxPercent || '0'}%):{' '}
+                                        {payComplete
+                                            ? (deductionCents / 100).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                )}
+                                {isJo && (
+                                    <p>
+                                        Net JO pay:{' '}
+                                        {payComplete ? netPay.toFixed(2) : '—'}
+                                    </p>
+                                )}
+                                {!isJo && (
+                                    <p>
+                                        Net OT pay:{' '}
+                                        {payComplete ? netPay.toFixed(2) : '—'}
+                                    </p>
+                                )}
+                                {isJo && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Daily rate ÷ 8 × total rendered hours
+                                    </p>
+                                )}
                                 {!payComplete && (
                                     <p>
-                                        Enter the report hourly rate to
+                                        Enter the report{' '}
+                                        {isJo ? 'daily' : 'hourly'} rate to
                                         calculate pay.
                                     </p>
                                 )}

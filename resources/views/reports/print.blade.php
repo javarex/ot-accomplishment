@@ -51,18 +51,22 @@
 <h1>{{ $template->report_title }}</h1>
 <div class="period">{{ \Carbon\CarbonImmutable::create($report->report_year, $report->report_month, 1)->format('F Y') }}</div>
 <table class="report-table">
-    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation)<th style="width: 14%">HOURLY RATE</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
+    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation)<th style="width: 14%">{{ $report->is_jo ? 'DAILY RATE' : 'HOURLY RATE' }}</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
     <tbody>
     @foreach ($report->entries as $entry)
-        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity }}</td>@if ($canViewComputation)<td>{{ $report->hourly_rate ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
+        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity }}</td>@if ($canViewComputation)<td>{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
     @endforeach
     </tbody>
 </table>
 @if ($canViewComputation && $report->quantity_mode === 'time')
     @if ($overtimePay['complete'])
-        <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+        @if ($report->is_jo)
+            <div class="total">Gross JO pay (daily rate / 8 × total rendered hours, 100% every day): {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>JO tax ({{ $report->jo_tax_percent }}%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net JO pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+        @else
+            <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+        @endif
     @else
-        <p>Enter an hourly rate for the report to calculate pay.</p>
+        <p>Enter a {{ $report->is_jo ? 'daily' : 'hourly' }} rate for the report to calculate pay.</p>
     @endif
 @endif
 <div class="certification">{{ $template->certification_statement }}</div>
