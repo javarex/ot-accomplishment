@@ -76,6 +76,6 @@
     <td><div class="signatory-label">Certified Correct:</div><div class="signatory-name">{{ $report->certified_name ?: $report->certifiedBy?->name }}</div><div class="signatory-position">{{ $report->certified_position ?: $report->certifiedBy?->position }}</div></td>
 </tr></table>
 <div class="approved-block"><div class="signatory-label">Approved by:</div><div class="signatory-name">{{ $report->approved_name ?: $report->approvedBy?->name }}</div><div class="signatory-position">{{ $report->approved_position ?: $report->approvedBy?->position }}</div></div>
-@if ($template->footer_text || $footerLogo)<div class="footer">@if ($footerLogo)<img src="{{ $footerLogo }}" alt="Provincial Capitol illustration">@endif<div class="footer-text">{!! \App\Services\Accomplishments\FooterHtml::sanitize($template->footer_text) !!}</div></div>@endif
+@if ($template->footer_text || $footerLogo)<div class="footer">@if ($footerLogo)<img src="{{ $footerLogo }}" alt="Provincial Capitol illustration">@endif<div class="footer-text">{!! str_replace('✉', '<span style="font-family: DejaVu Sans;">✉</span>', \App\Services\Accomplishments\FooterHtml::sanitize($template->footer_text)) !!}</div></div>@endif
 </body>
 </html>

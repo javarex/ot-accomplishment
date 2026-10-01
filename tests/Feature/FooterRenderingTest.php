@@ -18,7 +18,7 @@ class FooterRenderingTest extends TestCase
             $report->setRelation($relation, null);
         }
         $template = new ReportTemplate([
-            'footer_text' => '<p style="text-align:center;font-size:12pt;font-family:Arial"><b>Custom office footer</b></p><p><i>Custom address</i></p>',
+            'footer_text' => '<p style="text-align:center;font-size:12pt;font-family:Arial"><b>Custom office footer</b></p><p><i>Custom address</i></p><p style="font-family:Arial">✉ PICTO@davaodeoro.gov.ph</p>',
         ]);
         $footerLogo = 'data:image/jpeg;base64,'.base64_encode(file_get_contents(public_path('report-assets/footer.jpg')));
 
@@ -35,6 +35,7 @@ class FooterRenderingTest extends TestCase
 
         $this->assertStringContainsString('Custom office footer', $text);
         $this->assertStringContainsString('Custom address', $text);
+        $this->assertStringContainsString('✉ PICTO@davaodeoro.gov.ph', $text);
         $this->assertStringContainsString('text-align:center;font-size:12pt;font-family:Arial;', $html);
         $this->assertStringContainsString('alt="Provincial Capitol illustration"><div class="footer-text">', $html);
         $this->assertSame(1, $pdf->getCanvas()->get_page_count());
