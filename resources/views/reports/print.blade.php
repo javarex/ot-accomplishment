@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>{{ $template->report_title }}</title>
     <style>
-        @page { margin: 37mm 25mm 29mm; }
+        @page { margin: 37mm 25mm 43mm; }
         body { font-family: "Times New Roman", Times, serif; color: #111; font-size: 12pt; }
         .toolbar { background: #f2f4f7; padding: 12px; margin: -10px -10px 22px; font: 13px Arial, sans-serif; }
         .toolbar a, .toolbar button { margin-right: 10px; padding: 6px 10px; }
@@ -33,8 +33,9 @@
         .signatory-label { margin-bottom: 34px; }
         .signatory-name { font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; }
         .signatory-position { margin-top: 4px; font-size: 12pt; }
-        .footer { position: fixed; bottom: -21mm; left: 0; right: 0; font-family: Ovo, Times, serif; font-size: 8pt; line-height: 1.2; color: #e5b807; white-space: pre-line; }
-        .footer img { float: right; width: 150px; height: auto; }
+        .footer { position: fixed; bottom: -35mm; left: 0; right: 0; font-family: Ovo, Times, serif; font-size: 8pt; line-height: 1.2; color: #e5b807; text-align: center; }
+        .footer img { display: block; width: 150px; height: auto; margin: 0 auto 5px; }
+        .footer-text p, .footer-text div { margin: 0; }
         @media screen { .header { position: static; margin-bottom: 15px; } .footer { position: static; margin-top: 24px; } }
         @media print { .toolbar { display: none; } }
     </style>
@@ -51,10 +52,10 @@
 <h1>{{ $template->report_title }}</h1>
 <div class="period">{{ \Carbon\CarbonImmutable::create($report->report_year, $report->report_month, 1)->format('F Y') }}</div>
 <table class="report-table">
-    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation)<th style="width: 14%">{{ $report->is_jo ? 'DAILY RATE' : 'HOURLY RATE' }}</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
+    <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation && ($preview || $report->is_jo))<th style="width: 14%">{{ $report->is_jo ? 'DAILY RATE' : 'HOURLY RATE' }}</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
     <tbody>
     @foreach ($report->entries as $entry)
-        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity }}</td>@if ($canViewComputation)<td>{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
+        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity_mode === 'time' && $entry->time_minutes !== null ? \App\Services\Accomplishments\OvertimeQuantity::format($entry->time_minutes) : $entry->quantity }}</td>@if ($canViewComputation && ($preview || $report->is_jo))<td>{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
     @endforeach
     </tbody>
 </table>
@@ -62,7 +63,7 @@
     @if ($overtimePay['complete'])
         @if ($report->is_jo)
             <div class="total">Gross JO pay (daily rate / 8 × total rendered hours, 100% every day): {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>JO tax ({{ $report->jo_tax_percent }}%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net JO pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
-        @else
+        @elseif ($preview)
             <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
         @endif
     @else
@@ -75,6 +76,6 @@
     <td><div class="signatory-label">Certified Correct:</div><div class="signatory-name">{{ $report->certified_name ?: $report->certifiedBy?->name }}</div><div class="signatory-position">{{ $report->certified_position ?: $report->certifiedBy?->position }}</div></td>
 </tr></table>
 <div class="approved-block"><div class="signatory-label">Approved by:</div><div class="signatory-name">{{ $report->approved_name ?: $report->approvedBy?->name }}</div><div class="signatory-position">{{ $report->approved_position ?: $report->approvedBy?->position }}</div></div>
-@if ($template->footer_text || $footerLogo)<div class="footer">@if ($footerLogo)<img src="{{ $footerLogo }}" alt="Provincial Capitol illustration">@endif{{ $template->footer_text }}</div>@endif
+@if ($template->footer_text || $footerLogo)<div class="footer">@if ($footerLogo)<img src="{{ $footerLogo }}" alt="Provincial Capitol illustration">@endif<div class="footer-text">{!! \App\Services\Accomplishments\FooterHtml::sanitize($template->footer_text) !!}</div></div>@endif
 </body>
 </html>

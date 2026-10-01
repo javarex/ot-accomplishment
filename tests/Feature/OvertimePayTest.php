@@ -17,6 +17,38 @@ class OvertimePayTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_pdf_displays_hours_and_minutes_and_preserves_claimable_pay(): void
+    {
+        $user = User::factory()->create(['is_admin' => true]);
+        $payload = $this->payload($user);
+        $payload['entries'] = [
+            ['accomplishment_date' => '2026-09-04', 'time_minutes' => 311, 'task_accomplished' => 'Friday work'],
+            ['accomplishment_date' => '2026-09-05', 'time_minutes' => 60, 'task_accomplished' => 'Saturday work'],
+            ['accomplishment_date' => '2026-09-06', 'time_minutes' => 11, 'task_accomplished' => 'Sunday work'],
+        ];
+        $this->actingAs($user)->post(route('reports.store'), $payload)->assertSessionHasNoErrors();
+        $report = AccomplishmentReport::firstOrFail();
+
+        $pdf = $this->post(route('reports.generate', $report))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+
+        $pdfText = preg_replace('/\s+/', ' ', (new Parser)->parseContent($pdf->getContent())->getText());
+        $this->assertStringContainsString('5h 11m', $pdfText);
+        $this->assertStringContainsString('1h', $pdfText);
+        $this->assertStringContainsString('11m', $pdfText);
+        $this->assertStringNotContainsString('5.1833 hours', $pdfText);
+        $this->assertStringNotContainsString('HOURLY RATE', $pdfText);
+        $this->assertStringNotContainsString('100.00', $pdfText);
+        $this->assertStringNotContainsString('Gross OT pay:', $pdfText);
+        $this->assertStringNotContainsString('Deduction (20%):', $pdfText);
+        $this->assertStringNotContainsString('Net OT pay:', $pdfText);
+        $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('overtimePay.gross_cents', 82542)
+            ->where('overtimePay.deduction_cents', 16508)
+            ->where('overtimePay.net_cents', 66034)->etc());
+        $this->assertSame(311, $report->entries()->orderBy('sort_order')->firstOrFail()->time_minutes);
+        $this->assertSame('generated', $report->fresh()->status);
+    }
+
     public function test_report_rate_applies_to_all_records_and_exports_and_ignores_row_rates(): void
     {
         $user = User::factory()->create(['is_admin' => true]);
@@ -45,8 +77,8 @@ class OvertimePayTest extends TestCase
         $this->get(route('reports.preview', $report))->assertOk()->assertSee('HOURLY RATE')->assertSee('770.00');
         $pdf = $this->post(route('reports.generate', $report))->assertOk();
         $pdfText = preg_replace('/\s+/', ' ', (new Parser)->parseContent($pdf->getContent())->getText());
-        $this->assertStringContainsString('HOURLY RATE', $pdfText);
-        $this->assertStringContainsString('770.00', $pdfText);
+        $this->assertStringNotContainsString('HOURLY RATE', $pdfText);
+        $this->assertStringNotContainsString('Net OT pay:', $pdfText);
         $docx = $this->post(route('reports.generate-docx', $report))->assertOk();
         $path = tempnam(sys_get_temp_dir(), 'ot-pay-docx-');
         file_put_contents($path, $docx->getContent());

@@ -1,5 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
+import FooterEditor from '@/components/footer-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,7 +79,6 @@ export default function TemplateEdit({ template }: { template: Template }) {
                             'office_address',
                             'report_title',
                             'certification_statement',
-                            'footer_text',
                         ] as const
                     ).map((key) => (
                         <div key={key}>
@@ -92,7 +92,6 @@ export default function TemplateEdit({ template }: { template: Template }) {
                             {[
                                 'office_address',
                                 'certification_statement',
-                                'footer_text',
                             ].includes(key) ? (
                                 <textarea
                                     id={key}
@@ -119,6 +118,18 @@ export default function TemplateEdit({ template }: { template: Template }) {
                             )}
                         </div>
                     ))}
+                    <div>
+                        <Label htmlFor="footer_text">Footer text</Label>
+                        <FooterEditor
+                            initialHtml={template.footer_text ?? ''}
+                            onChange={(footer_text) =>
+                                setValues((current) => ({
+                                    ...current,
+                                    footer_text,
+                                }))
+                            }
+                        />
+                    </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div>
                             <Label htmlFor="left_logo">Left logo</Label>

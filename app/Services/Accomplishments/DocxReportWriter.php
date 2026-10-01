@@ -75,7 +75,7 @@ class DocxReportWriter
         $footer = $this->xmlHeader().'<w:ftr '.$this->namespaces().'>'
             .$this->table([7200, 2160], false)
             .$this->row([
-                $this->cell($this->paragraph((string) $template->footer_text, size: 16, font: 'Ovo', color: 'E5B807'), 7200),
+                $this->cell($this->paragraph(FooterHtml::text($template->footer_text), size: 16, font: 'Ovo', color: 'E5B807'), 7200),
                 $this->imageCell($footerLogo, 'rId1', 2160, 185),
             ]).'</w:tbl>'
             .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Page </w:t></w:r><w:fldSimple w:instr="PAGE"/></w:p></w:ftr>';
