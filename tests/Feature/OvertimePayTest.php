@@ -295,7 +295,7 @@ class OvertimePayTest extends TestCase
         $this->assertDatabaseCount('accomplishment_reports', 0);
     }
 
-    public function test_missing_rate_can_be_saved_as_draft_but_cannot_be_finalized_or_exported(): void
+    public function test_missing_rate_allows_pdf_but_still_requires_rate_for_finalization_and_docx(): void
     {
         $user = User::factory()->create(['is_admin' => true]);
         $payload = $this->payload($user);
@@ -305,7 +305,11 @@ class OvertimePayTest extends TestCase
         $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page->where('overtimePay.complete', false)->etc());
         $payload['finalize'] = true;
         $this->put(route('reports.update', $report), $payload)->assertSessionHasErrors(['hourly_rate' => 'Enter an hourly rate before finalizing.']);
-        $this->post(route('reports.generate', $report))->assertSessionHasErrors('entries');
+        $pdf = $this->post(route('reports.generate', $report))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $text = (new Parser)->parseContent($pdf->getContent())->getText();
+        $this->assertStringContainsString('1h', $text);
+        $this->assertStringNotContainsString('Enter a hourly rate', $text);
+        $this->assertSame('generated', $report->fresh()->status);
         $this->post(route('reports.generate-docx', $report))->assertSessionHasErrors('entries');
     }
 

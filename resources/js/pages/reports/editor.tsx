@@ -491,10 +491,13 @@ export default function ReportEditor({
         : Math.round(grossCents * 0.2);
     const netPay = (grossCents - deductionCents) / 100;
 
-    const canGenerate =
+    const canGeneratePdf =
         report &&
         !dirty &&
-        (quantityMode !== 'time' || !canViewComputation || payComplete) &&
+        (quantityMode !== 'time' ||
+            !isJo ||
+            !canViewComputation ||
+            payComplete) &&
         entries.length > 0 &&
         entries.every(
             (entry) =>
@@ -506,6 +509,9 @@ export default function ReportEditor({
                       )
                     : entry.quantity.trim()),
         );
+    const canGenerate =
+        canGeneratePdf &&
+        (quantityMode !== 'time' || !canViewComputation || payComplete);
 
     return (
         <>
@@ -1301,7 +1307,10 @@ export default function ReportEditor({
                                     name="_token"
                                     value={csrfToken}
                                 />
-                                <Button type="submit" disabled={!canGenerate}>
+                                <Button
+                                    type="submit"
+                                    disabled={!canGeneratePdf}
+                                >
                                     Generate PDF
                                 </Button>
                             </form>

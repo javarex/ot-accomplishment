@@ -28,7 +28,7 @@ class ReportGenerationController extends Controller
     public function generate(AccomplishmentReport $report): Response
     {
         Gate::authorize('generate', $report);
-        $this->ensureComplete($report);
+        $this->ensureComplete($report, requireComputation: $report->is_jo);
         $html = view('reports.print', $this->viewData($report, false))->render();
         $options = new Options;
         $options->set('isRemoteEnabled', false);
@@ -100,7 +100,7 @@ class ReportGenerationController extends Controller
         return null;
     }
 
-    private function ensureComplete(AccomplishmentReport $report): void
+    private function ensureComplete(AccomplishmentReport $report, bool $requireComputation = true): void
     {
         $report->load(['entries', 'preparedBy', 'certifiedBy', 'approvedBy']);
 
@@ -108,7 +108,11 @@ class ReportGenerationController extends Controller
             throw ValidationException::withMessages(['entries' => 'All accomplishments need a task and quantity before generating a report.']);
         }
 
-        if (! $this->calculator->calculate($report)['complete']) {
+        if ($report->quantity_mode === 'time' && $report->entries->contains(fn ($entry) => ($entry->time_minutes ?? 0) <= 0)) {
+            throw ValidationException::withMessages(['entries' => 'Enter hours and minutes for every accomplishment before generating.']);
+        }
+
+        if ($requireComputation && ! $this->calculator->calculate($report)['complete']) {
             throw ValidationException::withMessages(['entries' => $report->is_jo
                 ? 'Enter hours, minutes, and the report daily rate before generating.'
                 : 'Enter hours, minutes, and the report hourly rate before generating.']);

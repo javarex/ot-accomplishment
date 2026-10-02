@@ -66,7 +66,7 @@
         @elseif ($preview)
             <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
         @endif
-    @else
+    @elseif ($preview || $report->is_jo)
         <p>Enter a {{ $report->is_jo ? 'daily' : 'hourly' }} rate for the report to calculate pay.</p>
     @endif
 @endif
