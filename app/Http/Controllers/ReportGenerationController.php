@@ -56,7 +56,7 @@ class ReportGenerationController extends Controller
 
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="overtime-accomplishment-'.$report->report_year.'-'.str_pad((string) $report->report_month, 2, '0', STR_PAD_LEFT).'.pdf"',
+            'Content-Disposition' => 'attachment; filename="OT-accoplishment-'.$report->generated_at->format('Y-m-d_H-i-s').'.pdf"',
         ]);
     }
 

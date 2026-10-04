@@ -7,6 +7,7 @@ use App\Models\AccomplishmentReport;
 use App\Models\Signatory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use Smalot\PdfParser\Parser;
 use Tests\TestCase;
@@ -333,6 +334,7 @@ class AccomplishmentReportTest extends TestCase
 
     public function test_complete_report_generates_pdf_and_updates_status(): void
     {
+        $this->travelTo(Carbon::parse('2026-10-04 16:30:00'));
         $user = User::factory()->create();
         $signatories = $this->signatories($user);
         $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026, ...$signatories]);
@@ -340,7 +342,8 @@ class AccomplishmentReportTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('reports.generate', $report));
 
-        $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $response->assertOk()->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'attachment; filename="OT-accoplishment-2026-10-04_16-30-00.pdf"');
         $this->assertSame('%PDF', substr($response->getContent(), 0, 4));
         $pdfText = (new Parser)->parseContent($response->getContent())->getText();
         $this->assertStringContainsString('OVERTIME ACCOMPLISHMENT REPORT', $pdfText);
