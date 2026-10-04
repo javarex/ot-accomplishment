@@ -1,6 +1,7 @@
 import { Head, Link, router, useHttp, usePage } from '@inertiajs/react';
 import { GripVertical, Plus, Sparkles, Trash2 } from 'lucide-react';
 import {
+    useEffect,
     useRef,
     useState,
     type DragEvent,
@@ -99,7 +100,15 @@ type DtrPreview = {
     employee_name: string;
     month: number;
     year: number;
-    entries: Array<{ date: string; overtime_minutes: number }>;
+    entries: Array<{
+        date: string;
+        am_in: string | null;
+        am_out: string | null;
+        pm_in: string | null;
+        pm_out: string | null;
+        overtime_minutes: number | null;
+        remarks: string | null;
+    }>;
 };
 
 function calculatedQuantity(date: string, minutes: number | null): string {
@@ -179,6 +188,26 @@ export default function ReportEditor({
     const dtrPreview = useHttp<{ dtr: File | null }, DtrPreview>({ dtr: null });
     const [dtrPreviewStatus, setDtrPreviewStatus] = useState<string | null>(
         null,
+    );
+    const [processedDtr, setProcessedDtr] = useState<DtrPreview | null>(null);
+    const [showDtrRecords, setShowDtrRecords] = useState(false);
+    const [dtrNeedsConfirmation, setDtrNeedsConfirmation] = useState(false);
+    const [dtrView, setDtrView] = useState<'editable' | 'original'>('editable');
+    const [dtrPdfUrl, setDtrPdfUrl] = useState<string | null>(null);
+    useEffect(() => {
+        if (!dtrFile) {
+            setDtrPdfUrl(null);
+            return;
+        }
+        const url = URL.createObjectURL(dtrFile);
+        setDtrPdfUrl(url);
+        return () => URL.revokeObjectURL(url);
+    }, [dtrFile]);
+    const [otCellValues, setOtCellValues] = useState<Record<string, string>>(
+        {},
+    );
+    const [otCellErrors, setOtCellErrors] = useState<Record<string, string>>(
+        {},
     );
     const [dtrPreviewDates, setDtrPreviewDates] = useState<string[]>([]);
     const [aiIndex, setAiIndex] = useState<number | null>(null);
@@ -309,6 +338,11 @@ export default function ReportEditor({
     }
 
     function save(finalize: boolean) {
+        if (dtrNeedsConfirmation || Object.values(otCellErrors).some(Boolean)) {
+            setShowDtrRecords(true);
+            setDtrView('editable');
+            return;
+        }
         const previewedDtr = !report && dtrPreviewStatus ? dtrFile : null;
         const payload = {
             report_month: month,
@@ -335,6 +369,26 @@ export default function ReportEditor({
                 ? {
                       dtr: previewedDtr,
                       dtr_previewed: true,
+                      dtr_rows:
+                          processedDtr?.entries.map(
+                              ({
+                                  date,
+                                  am_in,
+                                  am_out,
+                                  pm_in,
+                                  pm_out,
+                                  overtime_minutes,
+                                  remarks,
+                              }) => ({
+                                  date,
+                                  am_in,
+                                  am_out,
+                                  pm_in,
+                                  pm_out,
+                                  overtime_minutes,
+                                  remarks,
+                              }),
+                          ) ?? [],
                       dtr_import_dates: entries
                           .map((entry) => entry.accomplishment_date)
                           .filter((date) => dtrPreviewDates.includes(date)),
@@ -391,40 +445,141 @@ export default function ReportEditor({
         setAiIndex(null);
     }
 
+    function editDtrAttendance(
+        date: string,
+        field: 'am_in' | 'am_out' | 'pm_in' | 'pm_out' | 'remarks',
+        value: string,
+    ) {
+        setProcessedDtr((current) =>
+            current
+                ? {
+                      ...current,
+                      entries: current.entries.map((entry) =>
+                          entry.date === date
+                              ? { ...entry, [field]: value || null }
+                              : entry,
+                      ),
+                  }
+                : current,
+        );
+        setDtrNeedsConfirmation(true);
+    }
+
+    function editOtCell(date: string, value: string) {
+        setDtrNeedsConfirmation(true);
+        setOtCellValues((current) => ({ ...current, [date]: value }));
+        const minutes = importedMinutes(value);
+        const source = processedDtr?.entries.find(
+            (entry) => entry.date === date,
+        );
+        const emptyOtCell = !value.trim();
+        setOtCellErrors((current) => ({
+            ...current,
+            [date]:
+                minutes || emptyOtCell
+                    ? ''
+                    : 'Enter OT time, e.g. 2h 15m (maximum 999h 59m).',
+        }));
+        if ((!minutes && !emptyOtCell) || !source) return;
+        setProcessedDtr((current) =>
+            current
+                ? {
+                      ...current,
+                      entries: current.entries.map((entry) =>
+                          entry.date === date
+                              ? { ...entry, overtime_minutes: minutes }
+                              : entry,
+                      ),
+                  }
+                : current,
+        );
+        setDtrNeedsConfirmation(true);
+    }
+
+    function confirmDtrOvertime() {
+        if (!processedDtr || Object.values(otCellErrors).some(Boolean)) return;
+        const overtimeEntries = processedDtr.entries.filter(
+            (entry) => (entry.overtime_minutes ?? 0) > 0,
+        );
+        const clearedDates = new Set(
+            processedDtr.entries
+                .filter(
+                    (entry) =>
+                        !entry.overtime_minutes &&
+                        dtrPreviewDates.includes(entry.date),
+                )
+                .map((entry) => entry.date),
+        );
+        setEntries((current) => {
+            const retained = current.filter(
+                (entry) => !clearedDates.has(entry.accomplishment_date),
+            );
+            const updated = retained.map((entry) => {
+                const dtrEntry = overtimeEntries.find(
+                    (row) => row.date === entry.accomplishment_date,
+                );
+                if (!dtrEntry) return entry;
+                return {
+                    ...entry,
+                    time_minutes: dtrEntry.overtime_minutes,
+                    quantity:
+                        quantityMode === 'time'
+                            ? calculatedQuantity(
+                                  dtrEntry.date,
+                                  dtrEntry.overtime_minutes,
+                              )
+                            : durationLabel(dtrEntry.overtime_minutes!),
+                };
+            });
+            const existingDates = new Set(
+                current.map((entry) => entry.accomplishment_date),
+            );
+            const added = overtimeEntries
+                .filter((entry) => !existingDates.has(entry.date))
+                .map((entry): Entry => ({
+                    key: crypto.randomUUID(),
+                    accomplishment_date: entry.date,
+                    quantity:
+                        quantityMode === 'time'
+                            ? calculatedQuantity(
+                                  entry.date,
+                                  entry.overtime_minutes,
+                              )
+                            : durationLabel(entry.overtime_minutes!),
+                    time_minutes: entry.overtime_minutes,
+                    task_accomplished: '',
+                    original_task_accomplished: '',
+                    ai_suggested_task_accomplished: '',
+                    ai_enhanced: false,
+                }));
+            return [...updated, ...added];
+        });
+        setDtrPreviewDates(overtimeEntries.map((entry) => entry.date));
+        setMonth(processedDtr.month);
+        setYear(processedDtr.year);
+        setDtrNeedsConfirmation(false);
+        setDirty(true);
+        setDtrPreviewStatus(
+            `${overtimeEntries.length} confirmed OT date(s) applied to 03 · Write. ${clearedDates.size} cleared OT date(s) removed. Save the report to keep these changes.`,
+        );
+        setShowDtrRecords(false);
+    }
+
     async function importDtr(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         if (!dtrFile) return;
         if (!report) {
             try {
                 const preview = await dtrPreview.post(previewDtr().url);
-                setMonth(preview.month);
-                setYear(preview.year);
-                const existingDates = new Set(
-                    entries.map((entry) => entry.accomplishment_date),
-                );
-                const imported = preview.entries
-                    .filter((entry) => !existingDates.has(entry.date))
-                    .map((entry): Entry => ({
-                        key: crypto.randomUUID(),
-                        accomplishment_date: entry.date,
-                        quantity: calculatedQuantity(
-                            entry.date,
-                            entry.overtime_minutes,
-                        ),
-                        time_minutes: entry.overtime_minutes,
-                        task_accomplished: '',
-                        original_task_accomplished: '',
-                        ai_suggested_task_accomplished: '',
-                        ai_enhanced: false,
-                    }));
-                setEntries((current) => [...current, ...imported]);
+                setOtCellValues({});
+                setOtCellErrors({});
+                setProcessedDtr(preview);
+                setDtrView('editable');
+                setShowDtrRecords(true);
+                setDtrNeedsConfirmation(true);
                 setDtrPreviewStatus(
-                    `Read ${preview.employee_name}'s DTR for ${new Date(preview.year, preview.month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}. ${preview.entries.length} overtime date(s) found. Edit the rows below, then save when ready.`,
+                    `Read ${preview.employee_name}'s DTR. Review the OT cells and confirm in the modal to apply them to 03 · Write.`,
                 );
-                setDtrPreviewDates(
-                    imported.map((entry) => entry.accomplishment_date),
-                );
-                setDirty(true);
             } catch {
                 setDtrPreviewStatus(null);
             }
@@ -440,6 +595,16 @@ export default function ReportEditor({
             },
         );
     }
+
+    const dtrOvertimeMinutes = (processedDtr?.entries ?? []).reduce(
+        (total, entry) =>
+            total +
+            (otCellValues[entry.date] === undefined
+                ? (entry.overtime_minutes ?? 0)
+                : (importedMinutes(otCellValues[entry.date]) ?? 0)),
+        0,
+    );
+    const hasInvalidDtrOt = Object.values(otCellErrors).some(Boolean);
 
     const overtimeTotals = entries.reduce(
         (totals, entry) => {
@@ -700,7 +865,7 @@ export default function ReportEditor({
                         Upload a text-based Civil Service Form No. 48 PDF.
                         {report
                             ? ' You will review detected dates before importing them.'
-                            : ' Processing the DTR adds overtime dates to this unsaved form. Edit them before saving.'}
+                            : ' Review and edit the DTR in the modal, then confirm to apply OT dates to the report.'}
                     </p>
                     <form
                         onSubmit={importDtr}
@@ -718,6 +883,11 @@ export default function ReportEditor({
                                     setDtrFile(file);
                                     dtrPreview.setData('dtr', file);
                                     dtrPreview.clearErrors();
+                                    setOtCellValues({});
+                                    setOtCellErrors({});
+                                    setDtrNeedsConfirmation(false);
+                                    setProcessedDtr(null);
+                                    setShowDtrRecords(false);
                                     setDtrPreviewStatus(null);
                                     setDtrPreviewDates([]);
                                 }}
@@ -730,6 +900,310 @@ export default function ReportEditor({
                             Process DTR
                         </Button>
                     </form>
+                    {!report && processedDtr && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-3"
+                            onClick={() => setShowDtrRecords(true)}
+                        >
+                            View All DTR Records
+                        </Button>
+                    )}
+                    <Dialog
+                        open={showDtrRecords}
+                        onOpenChange={setShowDtrRecords}
+                    >
+                        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+                            <DialogHeader>
+                                <DialogTitle>Uploaded DTR Records</DialogTitle>
+                                <DialogDescription>
+                                    {processedDtr?.employee_name} ·{' '}
+                                    {processedDtr &&
+                                        new Date(
+                                            processedDtr.year,
+                                            processedDtr.month - 1,
+                                            1,
+                                        ).toLocaleDateString('en-US', {
+                                            month: 'long',
+                                            year: 'numeric',
+                                        })}{' '}
+                                    · {processedDtr?.entries.length ?? 0}{' '}
+                                    records. All attendance dates are shown,
+                                    including dates without OT.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="flex gap-2" aria-label="DTR view">
+                                <Button
+                                    type="button"
+                                    variant={
+                                        dtrView === 'editable'
+                                            ? 'default'
+                                            : 'outline'
+                                    }
+                                    onClick={() => setDtrView('editable')}
+                                >
+                                    Editable DTR
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant={
+                                        dtrView === 'original'
+                                            ? 'default'
+                                            : 'outline'
+                                    }
+                                    onClick={() => setDtrView('original')}
+                                >
+                                    Original PDF
+                                </Button>
+                            </div>
+                            {dtrView === 'original' && dtrPdfUrl ? (
+                                <iframe
+                                    src={dtrPdfUrl}
+                                    title="Original uploaded DTR"
+                                    className="h-[65vh] w-full rounded-md border"
+                                />
+                            ) : (
+                                <div className="overflow-x-auto rounded-md bg-muted p-3 md:p-5">
+                                    <div className="mx-auto max-w-4xl min-w-[760px] border border-black bg-white p-6 font-serif text-black shadow-md">
+                                        <p className="text-xs italic">
+                                            Civil Service Form No. 48
+                                        </p>
+                                        <h2 className="mt-3 text-center text-xl font-bold tracking-widest">
+                                            DAILY TIME RECORD
+                                        </h2>
+                                        <p className="mt-4 border-b border-black text-center font-semibold">
+                                            {processedDtr?.employee_name}
+                                        </p>
+                                        <p className="text-center text-xs">
+                                            (Name)
+                                        </p>
+                                        <p className="my-4 text-center text-sm">
+                                            For the month of{' '}
+                                            <span className="font-semibold underline">
+                                                {processedDtr &&
+                                                    new Date(
+                                                        processedDtr.year,
+                                                        processedDtr.month - 1,
+                                                        1,
+                                                    ).toLocaleDateString(
+                                                        'en-US',
+                                                        {
+                                                            month: 'long',
+                                                            year: 'numeric',
+                                                        },
+                                                    )}
+                                            </span>
+                                        </p>
+                                        <table className="w-full border-collapse text-center text-sm [&_td]:border [&_td]:border-black [&_td]:p-1 [&_th]:border [&_th]:border-black [&_th]:p-2">
+                                            <thead>
+                                                <tr>
+                                                    <th rowSpan={2}>Day</th>
+                                                    <th colSpan={2}>A.M.</th>
+                                                    <th colSpan={2}>P.M.</th>
+                                                    <th rowSpan={2}>
+                                                        OT rendered
+                                                    </th>
+                                                    <th rowSpan={2}>Remarks</th>
+                                                </tr>
+                                                <tr>
+                                                    <th>Arrival</th>
+                                                    <th>Departure</th>
+                                                    <th>Arrival</th>
+                                                    <th>Departure</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {processedDtr?.entries.map(
+                                                    (entry) => (
+                                                        <tr key={entry.date}>
+                                                            <td
+                                                                className="w-10"
+                                                                title={
+                                                                    entry.date
+                                                                }
+                                                            >
+                                                                {Number(
+                                                                    entry.date.slice(
+                                                                        -2,
+                                                                    ),
+                                                                )}
+                                                            </td>
+                                                            {(
+                                                                [
+                                                                    'am_in',
+                                                                    'am_out',
+                                                                    'pm_in',
+                                                                    'pm_out',
+                                                                ] as const
+                                                            ).map((field) => (
+                                                                <td key={field}>
+                                                                    <input
+                                                                        className="h-8 w-20 bg-white text-center text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
+                                                                        value={
+                                                                            entry[
+                                                                                field
+                                                                            ] ??
+                                                                            ''
+                                                                        }
+                                                                        placeholder=""
+                                                                        maxLength={
+                                                                            5
+                                                                        }
+                                                                        aria-label={`${field.replace('_', ' ')} for ${entry.date}`}
+                                                                        onChange={(
+                                                                            event,
+                                                                        ) =>
+                                                                            editDtrAttendance(
+                                                                                entry.date,
+                                                                                field,
+                                                                                event
+                                                                                    .target
+                                                                                    .value,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </td>
+                                                            ))}
+                                                            <td className="w-28">
+                                                                <input
+                                                                    className="h-8 w-28 bg-white text-center text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
+                                                                    aria-label={`OT rendered time for ${entry.date}`}
+                                                                    placeholder="e.g. 2h 15m"
+                                                                    value={
+                                                                        otCellValues[
+                                                                            entry
+                                                                                .date
+                                                                        ] ??
+                                                                        (entry.overtime_minutes
+                                                                            ? durationLabel(
+                                                                                  entry.overtime_minutes,
+                                                                              )
+                                                                            : '')
+                                                                    }
+                                                                    onChange={(
+                                                                        event,
+                                                                    ) =>
+                                                                        editOtCell(
+                                                                            entry.date,
+                                                                            event
+                                                                                .target
+                                                                                .value,
+                                                                        )
+                                                                    }
+                                                                    aria-invalid={Boolean(
+                                                                        otCellErrors[
+                                                                            entry
+                                                                                .date
+                                                                        ],
+                                                                    )}
+                                                                    aria-describedby={
+                                                                        otCellErrors[
+                                                                            entry
+                                                                                .date
+                                                                        ]
+                                                                            ? `ot-error-${entry.date}`
+                                                                            : undefined
+                                                                    }
+                                                                />
+                                                                {otCellErrors[
+                                                                    entry.date
+                                                                ] && (
+                                                                    <p
+                                                                        id={`ot-error-${entry.date}`}
+                                                                        role="alert"
+                                                                        className="mt-1 max-w-28 text-xs text-red-700"
+                                                                    >
+                                                                        {
+                                                                            otCellErrors[
+                                                                                entry
+                                                                                    .date
+                                                                            ]
+                                                                        }
+                                                                    </p>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                <input
+                                                                    className="h-8 w-full min-w-28 bg-white px-1 text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
+                                                                    value={
+                                                                        entry.remarks ??
+                                                                        ''
+                                                                    }
+                                                                    maxLength={
+                                                                        1000
+                                                                    }
+                                                                    aria-label={`Remarks for ${entry.date}`}
+                                                                    onChange={(
+                                                                        event,
+                                                                    ) =>
+                                                                        editDtrAttendance(
+                                                                            entry.date,
+                                                                            'remarks',
+                                                                            event
+                                                                                .target
+                                                                                .value,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    ),
+                                                )}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr className="font-bold">
+                                                    <th
+                                                        colSpan={5}
+                                                        scope="row"
+                                                        className="text-right"
+                                                    >
+                                                        Total OT rendered
+                                                    </th>
+                                                    <td
+                                                        className="whitespace-nowrap"
+                                                        aria-live="polite"
+                                                    >
+                                                        {durationLabel(
+                                                            dtrOvertimeMinutes,
+                                                        )}
+                                                    </td>
+                                                    <td className="text-xs font-normal">
+                                                        {hasInvalidDtrOt
+                                                            ? 'Correct invalid OT cells to complete the total.'
+                                                            : ''}
+                                                    </td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                            <p className="text-sm text-muted-foreground">
+                                Edit attendance times using HH:MM and type
+                                remarks directly in the cells. Enter OT rendered
+                                time directly in its cell, e.g. 2h 15m. Clear an
+                                OT cell to remove its confirmed date from 03 ·
+                                Write. Changes are applied to 03 · Write only
+                                after confirmation.
+                            </p>
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    disabled={hasInvalidDtrOt}
+                                    onClick={confirmDtrOvertime}
+                                >
+                                    Confirm OT and Apply to Write
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={() => setShowDtrRecords(false)}
+                                >
+                                    Close
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                     {!report && dtrPreviewStatus && (
                         <p className="mt-3 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-100">
                             {dtrPreviewStatus}

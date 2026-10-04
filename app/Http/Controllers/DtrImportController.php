@@ -29,12 +29,7 @@ class DtrImportController extends Controller
             'employee_name' => $parsed['employee_name'],
             'month' => $parsed['month'],
             'year' => $parsed['year'],
-            'entries' => collect($parsed['entries'])
-                ->filter(fn (array $entry): bool => ($entry['overtime_minutes'] ?? 0) > 0)
-                ->map(fn (array $entry): array => [
-                    'date' => $entry['date'],
-                    'overtime_minutes' => $entry['overtime_minutes'],
-                ])->values()->all(),
+            'entries' => $parsed['entries'],
         ]);
     }
 

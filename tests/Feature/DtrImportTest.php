@@ -17,7 +17,7 @@ class DtrImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_previewing_dtr_returns_overtime_rows_without_saving_report_or_upload(): void
+    public function test_previewing_dtr_returns_all_attendance_rows_without_saving_report_or_upload(): void
     {
         Storage::fake('local');
         $user = User::factory()->create();
@@ -30,12 +30,35 @@ class DtrImportTest extends TestCase
         ])->assertOk()->assertJsonPath('month', 10)->assertJsonPath('year', 2026)
             ->assertJsonPath('entries.0.date', '2026-10-04')
             ->assertJsonPath('entries.0.overtime_minutes', 135)
-            ->assertJsonCount(1, 'entries');
+            ->assertJsonPath('entries.1.date', '2026-10-05')
+            ->assertJsonPath('entries.1.overtime_minutes', null)
+            ->assertJsonPath('entries.1.am_in', '08:00')
+            ->assertJsonPath('entries.1.pm_out', '17:00')
+            ->assertJsonCount(2, 'entries');
 
         $this->assertDatabaseCount('accomplishment_reports', 0);
         $this->assertDatabaseCount('dtr_imports', 0);
         $this->assertDatabaseCount('dtr_entries', 0);
         $this->assertSame([], Storage::disk('local')->files('dtr-imports'));
+    }
+
+    public function test_previewing_dtr_without_overtime_returns_attendance_records(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>October 2026</p><p>5 08:00 12:00 13:00 17:00</p><p>6 LEAVE</p>');
+        $pdf->render();
+
+        $this->actingAs($user)->withHeaders(['Accept' => 'application/json'])->post(route('reports.dtr.preview'), [
+            'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+        ])->assertOk()->assertJsonCount(2, 'entries')
+            ->assertJsonPath('entries.0.overtime_minutes', null)
+            ->assertJsonPath('entries.1.date', '2026-10-06')
+            ->assertJsonPath('entries.1.remarks', 'LEAVE');
+
+        $this->assertDatabaseCount('accomplishment_reports', 0);
+        $this->assertDatabaseCount('dtr_imports', 0);
     }
 
     public function test_invalid_dtr_preview_leaves_no_report_or_import(): void
@@ -80,6 +103,79 @@ class DtrImportTest extends TestCase
         $this->assertTrue($dtrEntry->selected_for_import);
         $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'dtr_entry_id' => $dtrEntry->id, 'time_minutes' => 135, 'task_accomplished' => 'Completed overtime work']);
         Storage::disk('local')->assertExists($import->file_path);
+    }
+
+    public function test_saving_manual_ot_for_an_ordinary_dtr_date_keeps_the_time_and_source(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>October 2026</p><p>4 08:00 12:00 13:00 17:00</p>');
+        $pdf->render();
+
+        $response = $this->actingAs($user)->post(route('reports.store'), [
+            'report_month' => 10, 'report_year' => 2026, 'quantity_mode' => 'time',
+            ...$this->signatories($user),
+            'entries' => [['accomplishment_date' => '2026-10-04', 'time_minutes' => 135, 'task_accomplished' => 'Completed overtime work']],
+            'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+            'dtr_previewed' => true,
+            'dtr_import_dates' => ['2026-10-04'],
+            'dtr_rows' => [['date' => '2026-10-04', 'am_in' => '08:15', 'am_out' => null, 'pm_in' => '13:10', 'pm_out' => '19:15', 'overtime_minutes' => 135, 'remarks' => 'Corrected attendance']],
+        ]);
+
+        $report = AccomplishmentReport::firstOrFail();
+        $import = DtrImport::firstOrFail();
+        $dtrEntry = $import->entries()->firstOrFail();
+        $response->assertRedirect(route('reports.edit', $report))->assertSessionHasNoErrors();
+        $this->assertSame('imported', $import->import_status);
+        $this->assertTrue($dtrEntry->selected_for_import);
+        $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'dtr_entry_id' => $dtrEntry->id, 'time_minutes' => 135, 'task_accomplished' => 'Completed overtime work']);
+        $this->assertDatabaseHas('dtr_entries', ['id' => $dtrEntry->id, 'am_in' => '08:15', 'am_out' => null, 'pm_in' => '13:10', 'pm_out' => '19:15', 'overtime_minutes' => 135, 'remarks' => 'Corrected attendance']);
+        $this->assertSame('08:00', $import->parsed_data['entries'][0]['am_in']);
+        Storage::disk('local')->assertExists($import->file_path);
+    }
+
+    public function test_edited_dtr_date_missing_from_upload_does_not_save_a_report(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>October 2026</p><p>4 08:00 12:00 13:00 17:00</p>');
+        $pdf->render();
+
+        $this->actingAs($user)->post(route('reports.store'), [
+            'report_month' => 10, 'report_year' => 2026, 'quantity_mode' => 'time',
+            ...$this->signatories($user),
+            'entries' => [['accomplishment_date' => '2026-10-04', 'time_minutes' => 135]],
+            'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+            'dtr_previewed' => true,
+            'dtr_rows' => [['date' => '2026-10-05', 'am_in' => '08:00']],
+        ])->assertSessionHasErrors('dtr_rows');
+
+        $this->assertDatabaseCount('accomplishment_reports', 0);
+        $this->assertDatabaseCount('dtr_imports', 0);
+        $this->assertSame([], Storage::disk('local')->files('dtr-imports'));
+    }
+
+    public function test_invalid_edited_attendance_time_does_not_save_a_report(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>October 2026</p><p>4 08:00 12:00 13:00 17:00</p>');
+        $pdf->render();
+
+        $this->actingAs($user)->post(route('reports.store'), [
+            'report_month' => 10, 'report_year' => 2026, 'quantity_mode' => 'time',
+            ...$this->signatories($user),
+            'entries' => [['accomplishment_date' => '2026-10-04', 'time_minutes' => 135]],
+            'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+            'dtr_previewed' => true,
+            'dtr_rows' => [['date' => '2026-10-04', 'am_in' => '25:00']],
+        ])->assertSessionHasErrors('dtr_rows.0.am_in');
+
+        $this->assertDatabaseCount('accomplishment_reports', 0);
+        $this->assertDatabaseCount('dtr_imports', 0);
     }
 
     public function test_invalid_preview_selection_does_not_save_a_report_or_file(): void

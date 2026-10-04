@@ -72,6 +72,15 @@ class AccomplishmentReportController extends Controller
             'dtr_previewed' => ['sometimes', 'boolean'],
             'dtr_import_dates' => ['sometimes', 'array'],
             'dtr_import_dates.*' => ['required', 'date_format:Y-m-d', 'distinct'],
+            'dtr_rows' => ['sometimes', 'array', 'max:31'],
+            'dtr_rows.*' => ['array:date,am_in,am_out,pm_in,pm_out,overtime_minutes,remarks'],
+            'dtr_rows.*.date' => ['required', 'date_format:Y-m-d', 'distinct'],
+            'dtr_rows.*.am_in' => ['nullable', 'date_format:H:i'],
+            'dtr_rows.*.am_out' => ['nullable', 'date_format:H:i'],
+            'dtr_rows.*.pm_in' => ['nullable', 'date_format:H:i'],
+            'dtr_rows.*.pm_out' => ['nullable', 'date_format:H:i'],
+            'dtr_rows.*.overtime_minutes' => ['nullable', 'integer', 'between:1,59999'],
+            'dtr_rows.*.remarks' => ['nullable', 'string', 'max:1000'],
         ]);
         $dtr = $request->file('dtr');
         $previewedDtr = $request->boolean('dtr_previewed');
@@ -85,6 +94,12 @@ class AccomplishmentReportController extends Controller
             try {
                 $import = DB::transaction(function () use ($request, $writer, $stager, $dtr, $dtrData, $previewedDtr, &$storedPath) {
                     $parsed = $stager->parse($dtr);
+                    $attendanceDates = collect($parsed['entries'])->pluck('date')->all();
+                    foreach ($dtrData['dtr_rows'] ?? [] as $row) {
+                        if (! in_array($row['date'], $attendanceDates, true)) {
+                            throw ValidationException::withMessages(['dtr_rows' => 'An edited date is not in the uploaded DTR. Process the DTR again.']);
+                        }
+                    }
                     $report = $writer->save(null, $request->user()->id, [
                         ...$request->all(),
                         'report_month' => $parsed['month'],
@@ -92,12 +107,11 @@ class AccomplishmentReportController extends Controller
                     ]);
 
                     if ($previewedDtr) {
-                        $overtimeDates = collect($parsed['entries'])
-                            ->filter(fn (array $entry): bool => ($entry['overtime_minutes'] ?? 0) > 0)
+                        $attendanceDates = collect($parsed['entries'])
                             ->pluck('date')->all();
 
                         foreach ($dtrData['dtr_import_dates'] ?? [] as $date) {
-                            if (! in_array($date, $overtimeDates, true) || ! $report->entries()->whereDate('accomplishment_date', $date)->exists()) {
+                            if (! in_array($date, $attendanceDates, true) || ! $report->entries()->whereDate('accomplishment_date', $date)->exists()) {
                                 throw ValidationException::withMessages(['dtr_import_dates' => 'A selected DTR date is missing from the report. Process the DTR again.']);
                             }
                         }
@@ -105,6 +119,12 @@ class AccomplishmentReportController extends Controller
 
                     $import = $stager->stage($report, $request->user()->id, $dtr, $parsed);
                     $storedPath = $import->file_path;
+                    if ($previewedDtr) {
+                        foreach ($dtrData['dtr_rows'] ?? [] as $row) {
+                            $import->entries()->whereDate('work_date', $row['date'])->firstOrFail()
+                                ->update(collect($row)->except('date')->all());
+                        }
+                    }
 
                     if ($previewedDtr) {
                         foreach ($dtrData['dtr_import_dates'] ?? [] as $date) {
