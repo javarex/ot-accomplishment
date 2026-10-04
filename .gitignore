@@ -3,6 +3,7 @@
 /node_modules
 /public/fonts-manifest.dev.json
 /public/hot
+/public/build
 /public/storage
 /storage/*.key
 /storage/pail

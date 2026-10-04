@@ -111,6 +111,13 @@ type DtrPreview = {
     }>;
 };
 
+let nextDraftEntryId = 0;
+
+function createDraftEntryKey(): string {
+    nextDraftEntryId += 1;
+    return `draft-entry-${nextDraftEntryId}`;
+}
+
 function calculatedQuantity(date: string, minutes: number | null): string {
     if (!date || !minutes) return '';
 
@@ -537,7 +544,7 @@ export default function ReportEditor({
             const added = overtimeEntries
                 .filter((entry) => !existingDates.has(entry.date))
                 .map((entry): Entry => ({
-                    key: crypto.randomUUID(),
+                    key: createDraftEntryKey(),
                     accomplishment_date: entry.date,
                     quantity:
                         quantityMode === 'time'
@@ -1305,7 +1312,7 @@ export default function ReportEditor({
                                     setEntries([
                                         ...entries,
                                         {
-                                            key: crypto.randomUUID(),
+                                            key: createDraftEntryKey(),
                                             accomplishment_date: '',
                                             quantity: '',
                                             time_minutes: null,
