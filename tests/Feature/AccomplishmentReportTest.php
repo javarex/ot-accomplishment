@@ -417,6 +417,16 @@ class AccomplishmentReportTest extends TestCase
 
         $pdf = (new Parser)->parseContent($response->getContent());
         $this->assertGreaterThan(1, count($pdf->getPages()));
+        foreach ($pdf->getPages() as $page) {
+            preg_match_all('/([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S/', $page->get('Contents')->getContent(), $matches, PREG_SET_ORDER);
+            $leftEdges = array_filter($matches, fn (array $line): bool => abs((float) $line[1] - 71.116) < 0.5 && abs((float) $line[3] - (float) $line[1]) < 0.01);
+            $this->assertNotEmpty($leftEdges);
+            $bottom = min(array_map(fn (array $line): float => min((float) $line[2], (float) $line[4]), $leftEdges));
+            $bottomBorders = array_filter($matches, fn (array $line): bool => abs((float) $line[2] - $bottom) < 0.5
+                && abs((float) $line[4] - $bottom) < 0.5
+                && (float) $line[1] < 72 && (float) $line[3] > 540);
+            $this->assertNotEmpty($bottomBorders, 'Every page containing report rows must close the table at its bottom edge.');
+        }
         $text = preg_replace('/\s+/', ' ', $pdf->getText());
         $this->assertStringContainsString('accomplishment number 1', $text);
         $this->assertStringContainsString('accomplishment number 25', $text);

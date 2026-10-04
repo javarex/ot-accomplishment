@@ -31,9 +31,13 @@
         .signatories { width: 100%; border-collapse: collapse; page-break-inside: avoid; }
         .signatories td { width: 50%; vertical-align: top; padding: 0 7px 10px; }
         .approved-block { width: 45%; margin: 22px auto 0; text-align: center; page-break-inside: avoid; }
-        .signatory-label { margin-bottom: 34px; }
-        .signatory-name { font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; }
-        .signatory-position { margin-top: 4px; font-size: 12pt; }
+        .signatory-label { padding-bottom: 34px; }
+        .signatory-text { display: inline-table; width: auto; border-collapse: collapse; }
+        .signatory-text td { width: auto; padding: 0; }
+        .signatory-text .signatory-name { font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .signatory-text .signatory-position { padding-top: 4px; font-size: 12pt; }
+        .approved-block .signatory-text { margin: 0 auto; }
+        .approved-block .signatory-text td { text-align: center; }
         .footer { position: fixed; bottom: -35mm; left: 0; right: 0; font-family: Ovo, Times, serif; font-size: 8pt; line-height: 1.2; color: #e5b807; text-align: center; }
         .footer img { display: block; width: 150px; height: auto; margin: 0 auto 5px; }
         .footer-text p, .footer-text div { margin: 0; }
@@ -73,10 +77,10 @@
 @endif
 <div class="certification">{{ $template->certification_statement }}</div>
 <table class="signatories"><tr>
-    <td><div class="signatory-label">Prepared by:</div><div class="signatory-name">{{ $report->prepared_name ?: $report->preparedBy?->name }}</div><div class="signatory-position">{{ $report->prepared_position ?: $report->preparedBy?->position }}</div></td>
-    <td><div class="signatory-label">Certified Correct:</div><div class="signatory-name">{{ $report->certified_name ?: $report->certifiedBy?->name }}</div><div class="signatory-position">{{ $report->certified_position ?: $report->certifiedBy?->position }}</div></td>
+    <td><div class="signatory-label">Prepared by:</div><table class="signatory-text"><tr><td class="signatory-name">{{ $report->prepared_name ?: $report->preparedBy?->name }}</td></tr><tr><td class="signatory-position">{{ $report->prepared_position ?: $report->preparedBy?->position }}</td></tr></table></td>
+    <td><div class="signatory-label">Certified Correct:</div><table class="signatory-text"><tr><td class="signatory-name">{{ $report->certified_name ?: $report->certifiedBy?->name }}</td></tr><tr><td class="signatory-position">{{ $report->certified_position ?: $report->certifiedBy?->position }}</td></tr></table></td>
 </tr></table>
-<div class="approved-block"><div class="signatory-label">Approved by:</div><div class="signatory-name">{{ $report->approved_name ?: $report->approvedBy?->name }}</div><div class="signatory-position">{{ $report->approved_position ?: $report->approvedBy?->position }}</div></div>
+<div class="approved-block"><div class="signatory-label">Approved by:</div><table class="signatory-text"><tr><td class="signatory-name">{{ $report->approved_name ?: $report->approvedBy?->name }}</td></tr><tr><td class="signatory-position">{{ $report->approved_position ?: $report->approvedBy?->position }}</td></tr></table></div>
 @if ($template->footer_text || $footerLogo)<div class="footer">@if ($footerLogo)<img src="{{ $footerLogo }}" alt="Provincial Capitol illustration">@endif<div class="footer-text">{!! str_replace('✉', '<span style="font-family: DejaVu Sans;">✉</span>', \App\Services\Accomplishments\FooterHtml::sanitize($template->footer_text)) !!}</div></div>@endif
 </body>
 </html>

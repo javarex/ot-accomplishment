@@ -6,7 +6,9 @@ use App\Models\AccomplishmentReport;
 use App\Models\ReportTemplate;
 use App\Services\Accomplishments\DocxReportWriter;
 use App\Services\Accomplishments\OvertimePayCalculator;
+use Dompdf\Canvas;
 use Dompdf\Dompdf;
+use Dompdf\Frame;
 use Dompdf\Options;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
@@ -36,6 +38,17 @@ class ReportGenerationController extends Controller
         $options->setDefaultMediaType('print');
         $pdf = new Dompdf($options);
         $pdf->setPaper([0, 0, 612, 936], 'portrait');
+        $pdf->setCallbacks([[
+            'event' => 'end_frame',
+            'f' => static function (Frame $frame, Canvas $canvas): void {
+                $node = $frame->get_node();
+                if (! $node instanceof \DOMElement || $node->getAttribute('class') !== 'report-table') {
+                    return;
+                }
+                [$x, $y, $width, $height] = $frame->get_border_box();
+                $canvas->line($x, $y + $height, $x + $width, $y + $height, [0.133, 0.133, 0.133], 0.5);
+            },
+        ]]);
         $pdf->loadHtml($html);
         $pdf->render();
         $pdf->getCanvas()->page_text(280, 920, 'Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.35, 0.35, 0.35]);

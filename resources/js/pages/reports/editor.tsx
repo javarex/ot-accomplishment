@@ -1,6 +1,6 @@
 import { formatPeso } from '@/lib/currency';
 import { Head, Link, router, useHttp, usePage } from '@inertiajs/react';
-import { GripVertical, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
     useEffect,
     useRef,
@@ -28,7 +28,6 @@ import {
     generate,
     generateDocx,
 } from '@/routes/reports';
-import { improve } from '@/routes/reports/ai';
 import {
     preview as previewDtr,
     store as uploadDtr,
@@ -92,7 +91,6 @@ type PageData = {
     errors: Record<string, string>;
     flash: {
         status?: string;
-        aiSuggestion?: { original: string; suggestion: string };
         createdSignatory?: { id: number; type: string };
     };
     csrfToken: string;
@@ -218,9 +216,6 @@ export default function ReportEditor({
         {},
     );
     const [dtrPreviewDates, setDtrPreviewDates] = useState<string[]>([]);
-    const [aiIndex, setAiIndex] = useState<number | null>(null);
-    const [suggestion, setSuggestion] = useState('');
-    const [aiOriginal, setAiOriginal] = useState('');
     const draggedTaskKey = useRef<string | null>(null);
     const taskTextareas = useRef(new Map<string, HTMLTextAreaElement>());
     const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
@@ -412,45 +407,6 @@ export default function ReportEditor({
         };
         if (report) router.put(updateReport(report.id).url, payload, options);
         else router.post(storeReport().url, payload, options);
-    }
-
-    function askAi(index: number) {
-        if (!report || !entries[index].task_accomplished.trim()) return;
-        setAiIndex(index);
-        setAiOriginal(entries[index].task_accomplished);
-        setSuggestion('');
-        requestSuggestion(entries[index].task_accomplished);
-    }
-
-    function requestSuggestion(text: string) {
-        if (!report) return;
-        router.post(
-            improve(report.id).url,
-            { text },
-            {
-                preserveState: true,
-                preserveScroll: true,
-                onStart: () => setBusy(true),
-                onFinish: () => setBusy(false),
-                onSuccess: (page) => {
-                    const value = (page.props.flash as PageData['flash'])
-                        ?.aiSuggestion;
-                    if (value) setSuggestion(value.suggestion);
-                },
-            },
-        );
-    }
-
-    function acceptSuggestion() {
-        if (aiIndex === null || !suggestion) return;
-        editEntry(aiIndex, {
-            task_accomplished: suggestion,
-            original_task_accomplished:
-                entries[aiIndex].original_task_accomplished || aiOriginal,
-            ai_suggested_task_accomplished: suggestion,
-            ai_enhanced: true,
-        });
-        setAiIndex(null);
     }
 
     function editDtrAttendance(
@@ -1583,20 +1539,6 @@ export default function ReportEditor({
                                         />
                                     </div>
                                     <div className="mt-1 flex gap-2">
-                                        {report && (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => askAi(index)}
-                                                disabled={
-                                                    !entry.task_accomplished.trim() ||
-                                                    busy
-                                                }
-                                            >
-                                                <Sparkles /> Improve with AI
-                                            </Button>
-                                        )}
                                         {entry.ai_enhanced && (
                                             <span className="text-xs text-muted-foreground">
                                                 AI enhanced · original retained
@@ -1892,61 +1834,6 @@ export default function ReportEditor({
                             </Button>
                         </DialogFooter>
                     </form>
-                </DialogContent>
-            </Dialog>
-            <Dialog
-                open={aiIndex !== null}
-                onOpenChange={(open) => {
-                    if (!open) setAiIndex(null);
-                }}
-            >
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Review AI suggestion</DialogTitle>
-                        <DialogDescription>
-                            The original text stays unchanged until you approve
-                            the suggestion.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-3 text-sm">
-                        <div>
-                            <strong>Original</strong>
-                            <p className="mt-1 rounded-md border p-3">
-                                {aiOriginal}
-                            </p>
-                        </div>
-                        <div>
-                            <strong>AI Suggested</strong>
-                            <p className="mt-1 min-h-14 rounded-md border p-3">
-                                {suggestion ||
-                                    (busy
-                                        ? 'Generating suggestion…'
-                                        : errors?.ai ||
-                                          'No suggestion available.')}
-                            </p>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setAiIndex(null)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => requestSuggestion(aiOriginal)}
-                        >
-                            Regenerate
-                        </Button>
-                        <Button
-                            disabled={!suggestion || busy}
-                            onClick={acceptSuggestion}
-                        >
-                            Use Suggestion
-                        </Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </>
