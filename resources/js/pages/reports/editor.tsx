@@ -150,7 +150,7 @@ export default function ReportEditor({
     canViewComputation: boolean;
     canEditComputation: boolean;
 }) {
-    const { errors, flash, csrfToken } = usePage<PageData>().props;
+    const { auth, errors, flash, csrfToken } = usePage<PageData>().props;
     const [month, setMonth] = useState(
         report?.report_month ?? new Date().getMonth() + 1,
     );
@@ -1428,19 +1428,23 @@ export default function ReportEditor({
                                                     }
                                                 />
                                             </div>
-                                            <p className="mt-1 text-xs text-muted-foreground">
-                                                Hours + minutes ·{' '}
-                                                {calculatedQuantity(
-                                                    entry.accomplishment_date,
-                                                    entry.time_minutes,
-                                                ) ||
-                                                    'Select a date and enter time'}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {isJo
-                                                    ? 'JO: daily rate ÷ 8 × rendered hours · 100% every day'
-                                                    : 'Weekdays: hourly rate × 125% · Weekends: hourly rate × 150%'}
-                                            </p>
+                                            {auth.user.is_admin === true && (
+                                                <>
+                                                    <p className="mt-1 text-xs text-muted-foreground">
+                                                        Hours + minutes ·{' '}
+                                                        {calculatedQuantity(
+                                                            entry.accomplishment_date,
+                                                            entry.time_minutes,
+                                                        ) ||
+                                                            'Select a date and enter time'}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {isJo
+                                                            ? 'JO: daily rate ÷ 8 × rendered hours · 100% every day'
+                                                            : 'Weekdays: hourly rate × 125% · Weekends: hourly rate × 150%'}
+                                                    </p>
+                                                </>
+                                            )}
                                         </>
                                     ) : (
                                         <Input
