@@ -1349,7 +1349,7 @@ export default function ReportEditor({
                                 <Label htmlFor="report-rate">
                                     {isJo
                                         ? 'Daily rate for JO report'
-                                        : 'Hourly rate for all records'}
+                                        : 'Hourly rate for all records (optional)'}
                                 </Label>
                                 <Input
                                     id="report-rate"
@@ -1361,7 +1361,7 @@ export default function ReportEditor({
                                     placeholder={
                                         isJo
                                             ? 'Enter daily rate'
-                                            : 'Enter hourly rate'
+                                            : 'Enter hourly rate (optional)'
                                     }
                                     readOnly={!canEditComputation}
                                     onChange={(event) => {

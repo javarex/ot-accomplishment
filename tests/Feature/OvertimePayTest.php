@@ -313,7 +313,7 @@ class OvertimePayTest extends TestCase
         $this->assertDatabaseCount('accomplishment_reports', 0);
     }
 
-    public function test_missing_rate_allows_pdf_but_still_requires_rate_for_finalization_and_docx(): void
+    public function test_missing_hourly_rate_allows_finalization_and_pdf_but_docx_requires_computation(): void
     {
         $user = User::factory()->create(['is_admin' => true]);
         $payload = $this->payload($user);
@@ -322,13 +322,32 @@ class OvertimePayTest extends TestCase
         $report = AccomplishmentReport::firstOrFail();
         $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page->where('overtimePay.complete', false)->etc());
         $payload['finalize'] = true;
-        $this->put(route('reports.update', $report), $payload)->assertSessionHasErrors(['hourly_rate' => 'Enter an hourly rate before finalizing.']);
+        $this->put(route('reports.update', $report), $payload)->assertSessionHasNoErrors();
+        $this->assertSame(AccomplishmentReport::FINALIZED, $report->fresh()->status);
+        $this->assertNull($report->fresh()->hourly_rate);
         $pdf = $this->post(route('reports.generate', $report))->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $text = (new Parser)->parseContent($pdf->getContent())->getText();
         $this->assertStringContainsString('1h', $text);
         $this->assertStringNotContainsString('Enter a hourly rate', $text);
         $this->assertSame('generated', $report->fresh()->status);
         $this->post(route('reports.generate-docx', $report))->assertSessionHasErrors('entries');
+    }
+
+    public function test_new_regular_ot_report_can_be_finalized_without_an_hourly_rate(): void
+    {
+        $user = User::factory()->create(['is_admin' => true]);
+        $payload = $this->payload($user);
+        unset($payload['hourly_rate']);
+        $payload['finalize'] = true;
+
+        $this->actingAs($user)->post(route('reports.store'), $payload)->assertSessionHasNoErrors();
+
+        $report = AccomplishmentReport::firstOrFail();
+        $this->assertSame(AccomplishmentReport::FINALIZED, $report->status);
+        $this->assertNull($report->hourly_rate);
+        $this->assertSame(60, $report->entries()->firstOrFail()->time_minutes);
+        $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('overtimePay.complete', false)->etc());
     }
 
     public function test_zero_rate_is_valid_and_results_in_zero_pay(): void

@@ -53,9 +53,6 @@ class ReportWriter
             if ($data['is_jo'] && $data['daily_rate'] === null) {
                 throw ValidationException::withMessages(['daily_rate' => 'Enter a daily rate before finalizing.']);
             }
-            if (! $data['is_jo'] && $data['hourly_rate'] === null) {
-                throw ValidationException::withMessages(['hourly_rate' => 'Enter an hourly rate before finalizing.']);
-            }
         }
         $entries = $data['entries'] ?? [];
 
