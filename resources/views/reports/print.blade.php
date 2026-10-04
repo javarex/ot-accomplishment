@@ -25,6 +25,7 @@
         .report-table tbody tr:last-child td { border-bottom: .5pt solid #222; }
         .date-column { width: 18.2%; }
         .quantity-column { width: 16.4%; text-align: center; }
+        .amount { font-family: "DejaVu Sans", sans-serif; }
         .total { margin-top: 9px; text-align: right; font-weight: bold; }
         .certification { margin: 22px 0 28px; text-align: justify; line-height: 1.55; page-break-inside: avoid; }
         .signatories { width: 100%; border-collapse: collapse; page-break-inside: avoid; }
@@ -55,16 +56,16 @@
     <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation && ($preview || $report->is_jo))<th style="width: 14%">{{ $report->is_jo ? 'DAILY RATE' : 'HOURLY RATE' }}</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
     <tbody>
     @foreach ($report->entries as $entry)
-        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity_mode === 'time' && $entry->time_minutes !== null ? \App\Services\Accomplishments\OvertimeQuantity::format($entry->time_minutes) : $entry->quantity }}</td>@if ($canViewComputation && ($preview || $report->is_jo))<td>{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) ?? '—' }}</td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
+        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity_mode === 'time' && $entry->time_minutes !== null ? \App\Services\Accomplishments\OvertimeQuantity::format($entry->time_minutes) : $entry->quantity }}</td>@if ($canViewComputation && ($preview || $report->is_jo))<td><span class="amount">{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) !== null ? '₱'.number_format((float) ($report->is_jo ? $report->daily_rate : $report->hourly_rate), 2, '.', ',') : '—' }}</span></td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
     @endforeach
     </tbody>
 </table>
 @if ($canViewComputation && $report->quantity_mode === 'time')
     @if ($overtimePay['complete'])
         @if ($report->is_jo)
-            <div class="total">Gross JO pay (daily rate / 8 × total rendered hours, 100% every day): {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>JO tax ({{ $report->jo_tax_percent }}%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net JO pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+            <div class="total">Gross JO pay (daily rate / 8 × total rendered hours, 100% every day): <span class="amount">₱{{ number_format($overtimePay['gross_cents'] / 100, 2, '.', ',') }}</span><br>JO tax ({{ $report->jo_tax_percent }}%): <span class="amount">₱{{ number_format($overtimePay['deduction_cents'] / 100, 2, '.', ',') }}</span><br>Net JO pay: <span class="amount">₱{{ number_format($overtimePay['net_cents'] / 100, 2, '.', ',') }}</span></div>
         @elseif ($preview)
-            <div class="total">Gross OT pay: {{ number_format($overtimePay['gross_cents'] / 100, 2) }}<br>Deduction (20%): {{ number_format($overtimePay['deduction_cents'] / 100, 2) }}<br>Net OT pay: {{ number_format($overtimePay['net_cents'] / 100, 2) }}</div>
+            <div class="total">Gross OT pay: <span class="amount">₱{{ number_format($overtimePay['gross_cents'] / 100, 2, '.', ',') }}</span><br>Deduction (20%): <span class="amount">₱{{ number_format($overtimePay['deduction_cents'] / 100, 2, '.', ',') }}</span><br>Net OT pay: <span class="amount">₱{{ number_format($overtimePay['net_cents'] / 100, 2, '.', ',') }}</span></div>
         @endif
     @elseif ($preview || $report->is_jo)
         <p>Enter a {{ $report->is_jo ? 'daily' : 'hourly' }} rate for the report to calculate pay.</p>

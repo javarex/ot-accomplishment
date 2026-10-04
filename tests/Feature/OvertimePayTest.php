@@ -74,7 +74,7 @@ class OvertimePayTest extends TestCase
             ->where('overtimePay.deduction_cents', 19250)
             ->where('overtimePay.net_cents', 77000)
             ->where('overtimePay.complete', true)->etc());
-        $this->get(route('reports.preview', $report))->assertOk()->assertSee('HOURLY RATE')->assertSee('770.00');
+        $this->get(route('reports.preview', $report))->assertOk()->assertSee('HOURLY RATE')->assertSee('₱770.00');
         $pdf = $this->post(route('reports.generate', $report))->assertOk();
         $pdfText = preg_replace('/\s+/', ' ', (new Parser)->parseContent($pdf->getContent())->getText());
         $this->assertStringNotContainsString('HOURLY RATE', $pdfText);
@@ -87,12 +87,27 @@ class OvertimePayTest extends TestCase
             $this->assertTrue($zip->open($path));
             $xml = $zip->getFromName('word/document.xml');
             $this->assertStringContainsString('HOURLY RATE', $xml);
-            $this->assertStringContainsString('100.00', $xml);
-            $this->assertStringContainsString('770.00', $xml);
+            $this->assertStringContainsString('₱100.00', $xml);
+            $this->assertStringContainsString('₱770.00', $xml);
             $zip->close();
         } finally {
             unlink($path);
         }
+    }
+
+    public function test_preview_formats_large_peso_amounts_without_changing_stored_rate(): void
+    {
+        $user = User::factory()->create(['is_admin' => true]);
+        $payload = $this->payload($user);
+        $payload['hourly_rate'] = '1000.00';
+        $payload['entries'] = [['accomplishment_date' => '2026-09-04', 'time_minutes' => 60, 'task_accomplished' => 'Completed work']];
+        $this->actingAs($user)->post(route('reports.store'), $payload)->assertSessionHasNoErrors();
+        $report = AccomplishmentReport::firstOrFail();
+
+        $this->get(route('reports.preview', $report))->assertOk()
+            ->assertSee('₱1,000.00')->assertSee('₱1,250.00')->assertSee('₱250.00');
+
+        $this->assertSame('1000.00', $report->fresh()->hourly_rate);
     }
 
     public function test_rate_update_persists_and_recalculates_pay(): void
@@ -137,7 +152,10 @@ class OvertimePayTest extends TestCase
             ->where('overtimePay.complete', true)->etc());
         $this->get(route('reports.preview', $report))->assertOk()->assertSee('DAILY RATE')->assertSee('JO pay')->assertDontSee('Deduction (20%)');
         $pdf = $this->post(route('reports.generate', $report))->assertOk();
-        $this->assertStringContainsString('JO pay', (new Parser)->parseContent($pdf->getContent())->getText());
+        $pdfText = (new Parser)->parseContent($pdf->getContent())->getText();
+        $this->assertStringContainsString('JO pay', $pdfText);
+        $this->assertStringContainsString('₱800.00', $pdfText);
+        $this->assertStringContainsString('₱375.00', $pdfText);
         $docx = $this->post(route('reports.generate-docx', $report))->assertOk();
         $path = tempnam(sys_get_temp_dir(), 'jo-pay-docx-');
         file_put_contents($path, $docx->getContent());

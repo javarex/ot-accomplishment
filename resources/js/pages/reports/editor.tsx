@@ -1,3 +1,4 @@
+import { formatPeso } from '@/lib/currency';
 import { Head, Link, router, useHttp, usePage } from '@inertiajs/react';
 import { GripVertical, Plus, Sparkles, Trash2 } from 'lucide-react';
 import {
@@ -1662,7 +1663,7 @@ export default function ReportEditor({
                                         <p>
                                             Gross OT pay:{' '}
                                             {payComplete
-                                                ? weekdayPay.toFixed(2)
+                                                ? formatPeso(weekdayPay)
                                                 : '—'}
                                         </p>
                                     </div>
@@ -1682,7 +1683,7 @@ export default function ReportEditor({
                                         <p>
                                             Gross OT pay:{' '}
                                             {payComplete
-                                                ? weekendPay.toFixed(2)
+                                                ? formatPeso(weekendPay)
                                                 : '—'}
                                         </p>
                                     </div>
@@ -1702,14 +1703,14 @@ export default function ReportEditor({
                                 <p>
                                     {isJo ? 'Gross JO pay' : 'Gross OT pay'}:{' '}
                                     {payComplete
-                                        ? (grossCents / 100).toFixed(2)
+                                        ? formatPeso(grossCents / 100)
                                         : '—'}
                                 </p>
                                 {!isJo && (
                                     <p>
                                         Deduction (20%):{' '}
                                         {payComplete
-                                            ? (deductionCents / 100).toFixed(2)
+                                            ? formatPeso(deductionCents / 100)
                                             : '—'}
                                     </p>
                                 )}
@@ -1717,20 +1718,20 @@ export default function ReportEditor({
                                     <p>
                                         JO tax ({joTaxPercent || '0'}%):{' '}
                                         {payComplete
-                                            ? (deductionCents / 100).toFixed(2)
+                                            ? formatPeso(deductionCents / 100)
                                             : '—'}
                                     </p>
                                 )}
                                 {isJo && (
                                     <p>
                                         Net JO pay:{' '}
-                                        {payComplete ? netPay.toFixed(2) : '—'}
+                                        {payComplete ? formatPeso(netPay) : '—'}
                                     </p>
                                 )}
                                 {!isJo && (
                                     <p>
                                         Net OT pay:{' '}
-                                        {payComplete ? netPay.toFixed(2) : '—'}
+                                        {payComplete ? formatPeso(netPay) : '—'}
                                     </p>
                                 )}
                                 {isJo && (

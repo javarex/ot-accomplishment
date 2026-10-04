@@ -1,3 +1,4 @@
+import { formatPeso } from '@/lib/currency';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -144,9 +145,11 @@ export default function ReportShow({
                         <section className="rounded-lg border bg-card p-4">
                             <p>
                                 {report.is_jo ? 'Daily rate' : 'Hourly rate'}:{' '}
-                                {report.is_jo
-                                    ? (report.daily_rate ?? '—')
-                                    : (report.hourly_rate ?? '—')}
+                                {formatPeso(
+                                    report.is_jo
+                                        ? report.daily_rate
+                                        : report.hourly_rate,
+                                )}
                             </p>
                             {report.is_jo && (
                                 <p>JO tax: {report.jo_tax_percent ?? '0'}%</p>
@@ -231,43 +234,43 @@ export default function ReportShow({
                                             ? 'Gross JO pay'
                                             : 'Gross OT pay'}
                                         :{' '}
-                                        {(
-                                            overtimePay.gross_cents / 100
-                                        ).toFixed(2)}
+                                        {formatPeso(
+                                            overtimePay.gross_cents / 100,
+                                        )}
                                     </p>
                                     {report.is_jo && (
                                         <p>
                                             JO tax (
                                             {report.jo_tax_percent ?? '0'}%):{' '}
-                                            {(
+                                            {formatPeso(
                                                 overtimePay.deduction_cents /
-                                                100
-                                            ).toFixed(2)}
+                                                    100,
+                                            )}
                                         </p>
                                     )}
                                     {report.is_jo && (
                                         <p>
                                             Net JO pay:{' '}
-                                            {(
-                                                overtimePay.net_cents / 100
-                                            ).toFixed(2)}
+                                            {formatPeso(
+                                                overtimePay.net_cents / 100,
+                                            )}
                                         </p>
                                     )}
                                     {!report.is_jo && (
                                         <p>
                                             Deduction (20%):{' '}
-                                            {(
+                                            {formatPeso(
                                                 overtimePay.deduction_cents /
-                                                100
-                                            ).toFixed(2)}
+                                                    100,
+                                            )}
                                         </p>
                                     )}
                                     {!report.is_jo && (
                                         <p>
                                             Net OT pay:{' '}
-                                            {(
-                                                overtimePay.net_cents / 100
-                                            ).toFixed(2)}
+                                            {formatPeso(
+                                                overtimePay.net_cents / 100,
+                                            )}
                                         </p>
                                     )}
                                 </>
@@ -356,9 +359,11 @@ export default function ReportShow({
                                     <td className="p-3">{entry.quantity}</td>
                                     {canViewComputation && (
                                         <td className="p-3">
-                                            {report.is_jo
-                                                ? (report.daily_rate ?? '—')
-                                                : (report.hourly_rate ?? '—')}
+                                            {formatPeso(
+                                                report.is_jo
+                                                    ? report.daily_rate
+                                                    : report.hourly_rate,
+                                            )}
                                         </td>
                                     )}
                                     <td className="p-3 whitespace-pre-wrap">
