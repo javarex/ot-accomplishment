@@ -25,6 +25,38 @@ class PdfDtrParserTest extends TestCase
         $this->assertNull($result['entries'][1]['overtime_minutes']);
     }
 
+    public function test_wrapped_mixed_remarks_stay_with_their_day_and_preserve_overtime(): void
+    {
+        $text = <<<'DTR'
+Name: EMPLOYEE SAMPLE
+September 2026
+23W07:59 12:3109:18    W 23    12:3107:59 09:18*    *
+OT 3h 18m    OT 3h 18m
+12:0012:00
+28M    M 28
+WORK SUSPENSION,CTO    WORK SUSPENSION,CTO
+29T07:16    10:15    T 2907:16    10:15
+OB, OT 4h 15m OB, OT 4h 15m
+30W07:40 12:4411:11    W 30    12:4407:40 11:11
+OB, OT 5h 11m OB, OT 5h 11m
+I hereby certify on my honor that the above is true and correct
+OT 33h 33m    OT 33h 33m
+DTR;
+
+        $result = (new PdfDtrParser)->parseText($text);
+
+        $this->assertCount(4, $result['entries']);
+        $this->assertSame(198, $result['entries'][0]['overtime_minutes']);
+        $this->assertSame('12:00', $result['entries'][0]['am_out']);
+        $this->assertSame('WORK SUSPENSION,CTO', $result['entries'][1]['remarks']);
+        $this->assertNull($result['entries'][1]['overtime_minutes']);
+        $this->assertSame(255, $result['entries'][2]['overtime_minutes']);
+        $this->assertSame('OB, OT 4h 15m', $result['entries'][2]['remarks']);
+        $this->assertNull($result['entries'][2]['pm_in']);
+        $this->assertSame(311, $result['entries'][3]['overtime_minutes']);
+        $this->assertSame('OB, OT 5h 11m', $result['entries'][3]['remarks']);
+    }
+
     public function test_minutes_have_stable_human_readable_format(): void
     {
         $this->assertSame(135, OvertimeQuantity::parse('2h 15m'));

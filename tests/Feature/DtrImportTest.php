@@ -61,6 +61,26 @@ class DtrImportTest extends TestCase
         $this->assertDatabaseCount('dtr_imports', 0);
     }
 
+    public function test_preview_includes_wrapped_ob_remarks_and_overtime(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: EMPLOYEE SAMPLE</p><p>September 2026</p><p>29 07:16 10:15</p><p>OB, OT 4h 15m</p><p>30 07:40 12:44 23:11</p><p>OB, OT 5h 11m</p><p>I hereby certify on my honor</p><p>OT 9h 26m</p>');
+        $pdf->render();
+
+        $this->actingAs($user)->withHeaders(['Accept' => 'application/json'])->post(route('reports.dtr.preview'), [
+            'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+        ])->assertOk()->assertJsonCount(2, 'entries')
+            ->assertJsonPath('entries.0.remarks', 'OB, OT 4h 15m')
+            ->assertJsonPath('entries.0.overtime_minutes', 255)
+            ->assertJsonPath('entries.1.remarks', 'OB, OT 5h 11m')
+            ->assertJsonPath('entries.1.overtime_minutes', 311);
+
+        $this->assertDatabaseCount('accomplishment_reports', 0);
+        $this->assertDatabaseCount('dtr_imports', 0);
+    }
+
     public function test_invalid_dtr_preview_leaves_no_report_or_import(): void
     {
         Storage::fake('local');

@@ -66,7 +66,17 @@ class PdfDtrParser implements DtrParser
                 continue;
             }
 
-            $firstCopy = preg_split('/\s+[MTWFS]\s+0?'.$day.'\b/i', $content, 2)[0] ?? $content;
+            $continuationLines = [];
+            for ($nextIndex = $lineIndex + 1; $nextIndex < count($lines); $nextIndex++) {
+                $nextLine = trim($lines[$nextIndex]);
+                if (preg_match('/^(?:0?[1-9]|[12]\d|3[01])(?:\s*[MTWFS](?=\d|\s|$)|\s+\S)/i', $nextLine)
+                    || preg_match('/I hereby|In-Charge|report of the hours|at the time of arrival|Civil Service Form|DAILY TIME RECORD|For the Month|DdO-form|^20\d{2}\//i', $nextLine)) {
+                    break;
+                }
+                $continuationLines[] = $nextLine;
+            }
+            $rowContent = trim($content.' '.implode(' ', $continuationLines));
+            $firstCopy = preg_split('/(?:^|\s+)[MTWFS]\s+0?'.$day.'(?=\b|\d{1,2}:)/i', $content, 2)[0] ?? $content;
             preg_match_all('/(\d{1,2}:\d{2})/', $firstCopy, $firstCopyMatches);
             preg_match_all('/(\d{1,2}:\d{2})/', $content, $allTimeMatches);
             $times = $firstCopyMatches[1];
@@ -97,25 +107,34 @@ class PdfDtrParser implements DtrParser
                 }
             }
 
-            if (preg_match('/^\s*(\d{1,2}:\d{2})/', $lines[$lineIndex + 1] ?? '', $continuation)) {
-                $amOut = $continuation[1];
+            foreach ($continuationLines as $continuationLine) {
+                if (preg_match('/^\s*(\d{1,2}:\d{2})/', $continuationLine, $continuation)) {
+                    $amOut = $continuation[1];
+                }
             }
 
             $overtime = null;
-            $remarks = null;
-
-            if (preg_match('/\bOT\s*[:=-]?\s*((?:\d+\s*h(?:ours?|rs?)?(?:\s*\d+\s*m(?:in(?:utes?)?)?)?)|(?:\d+\s*m(?:in(?:utes?)?)?)|(?:\d+:\d{2}))/i', $content, $otMatch)) {
+            $otText = null;
+            if (preg_match('/(?<![A-Za-z])OT\s*[:=-]?\s*((?:\d+\s*h(?:ours?|rs?)?(?:\s*\d+\s*m(?:in(?:utes?)?)?)?)|(?:\d+\s*m(?:in(?:utes?)?)?)|(?:\d+:\d{2}))/i', $rowContent, $otMatch)) {
                 try {
                     $overtime = OvertimeQuantity::parse($otMatch[1]);
-                    $remarks = trim($otMatch[0]);
+                    $otText = $otMatch[0];
                 } catch (\InvalidArgumentException) {
                     $overtime = null;
                 }
             }
 
-            if ($remarks === null && preg_match('/\bLEAVE\b/i', $content)) {
-                $remarks = 'LEAVE';
+            $remarksContent = $otText !== null ? str_replace($otText, '__DTR_OT__', $rowContent) : $rowContent;
+            $remarksContent = preg_replace('/(?:^|\s+)[MTWFS]\s+0?'.$day.'(?=\b|\d{1,2}:)/i', ' ', $remarksContent);
+            $remarksContent = preg_replace('/\d{1,2}:\d{2}/', ' ', $remarksContent);
+            $remarksContent = str_replace('__DTR_OT__', $otText ?? '', $remarksContent);
+            $remarkWords = preg_split('/\s+/', trim($remarksContent), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            $half = intdiv(count($remarkWords), 2);
+            if ($half > 0 && count($remarkWords) % 2 === 0
+                && array_slice($remarkWords, 0, $half) === array_slice($remarkWords, $half)) {
+                $remarkWords = array_slice($remarkWords, 0, $half);
             }
+            $remarks = $remarkWords !== [] ? implode(' ', $remarkWords) : null;
 
             $record = [
                 'day' => $day,
