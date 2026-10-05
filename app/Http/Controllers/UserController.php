@@ -25,6 +25,7 @@ class UserController extends Controller
         $users = User::withTrashed()->with('roles:id,name')
             ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query
                 ->where('name', 'like', '%'.$search.'%')
+                ->orWhere('username', 'like', '%'.$search.'%')
                 ->orWhere('email', 'like', '%'.$search.'%')))
             ->orderBy('name')->orderBy('id')->paginate(15)->withQueryString();
 
@@ -32,6 +33,7 @@ class UserController extends Controller
             'users' => $users->through(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
+                'username' => $user->username,
                 'email' => $user->email,
                 'is_admin' => $user->is_admin,
                 'deleted_at' => $user->deleted_at,
@@ -49,12 +51,14 @@ class UserController extends Controller
         $this->authorizeAccess($request);
         $data = $request->validate([
             ...$this->profileRules(),
+            'username' => ['required', 'string', 'max:255', 'regex:/^[a-z0-9._-]+$/', Rule::unique('users', 'username')],
             'password' => $this->passwordRules(),
             ...$this->roleRules(),
         ]);
         DB::transaction(function () use ($data): void {
             $user = User::create([
                 'name' => $data['name'],
+                'username' => $data['username'],
                 'email' => $data['email'],
                 'password' => $data['password'],
                 'is_admin' => false,
@@ -71,6 +75,7 @@ class UserController extends Controller
         $this->authorizeTarget($request, $user);
         $data = $request->validate([
             ...$this->profileRules($user->id),
+            'username' => ['required', 'string', 'max:255', 'regex:/^[a-z0-9._-]+$/', Rule::unique('users', 'username')->ignore($user)],
             'password' => ['nullable', 'string', Password::default(), 'confirmed'],
             ...$this->roleRules(),
         ]);
@@ -79,6 +84,7 @@ class UserController extends Controller
                 $user->email_verified_at = null;
             }
             $user->name = $data['name'];
+            $user->username = $data['username'];
             $user->email = $data['email'];
             if (! empty($data['password'])) {
                 $user->password = $data['password'];

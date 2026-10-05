@@ -30,15 +30,30 @@ class RegistrationTest extends TestCase
     {
         $response = $this->post(route('register.store'), [
             'name' => 'Test User',
+            'username' => 'testuser',
             'email' => 'test@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
         ]);
 
+        $this->assertDatabaseHas('users', ['username' => 'testuser']);
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
         $this->assertNull(User::where('email', 'test@example.com')->firstOrFail()->email_verified_at);
         $this->get(route('dashboard'))->assertOk();
+    }
+
+    public function test_registration_requires_a_unique_valid_username(): void
+    {
+        $user = User::factory()->create(['username' => 'existing']);
+        $payload = ['name' => 'New User', 'email' => 'new@example.com',
+            'password' => 'password', 'password_confirmation' => 'password'];
+        foreach ([null, 'existing', 'invalid username'] as $username) {
+            $this->post(route('register.store'), [...$payload, 'username' => $username])
+                ->assertSessionHasErrors('username');
+        }
+        $this->assertGuest();
+        $this->assertDatabaseCount('users', 1);
     }
 
     public function test_email_verification_routes_are_disabled(): void

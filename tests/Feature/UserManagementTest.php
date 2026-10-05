@@ -26,7 +26,7 @@ class UserManagementTest extends TestCase
         $this->actingAs($manager)->get(route('users.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('users/index')->where('canImpersonate', false)->has('users.data', 1)->etc());
         $this->post(route('users.store'), [
-            'name' => 'New User', 'email' => 'new@example.test', 'password' => 'SecurePassword123!',
+            'username' => 'newuser', 'name' => 'New User', 'email' => 'new@example.test', 'password' => 'SecurePassword123!',
             'password_confirmation' => 'SecurePassword123!', 'role_ids' => [$staff->id], 'is_admin' => true,
         ])->assertSessionHasNoErrors();
         $user = User::where('email', 'new@example.test')->firstOrFail();
@@ -35,7 +35,7 @@ class UserManagementTest extends TestCase
         $this->assertEqualsCanonicalizing([$staff->id], $user->roles->pluck('id')->all());
 
         $this->put(route('users.update', $user), [
-            'name' => 'Updated User', 'email' => 'updated@example.test',
+            'username' => 'updateduser', 'name' => 'Updated User', 'email' => 'updated@example.test',
             'role_ids' => [$managerRole->id],
         ])->assertSessionHasNoErrors();
         $this->assertSame('Updated User', $user->fresh()->name);
@@ -96,9 +96,9 @@ class UserManagementTest extends TestCase
         $user->delete();
 
         $this->post(route('login'), [
-            'email' => $user->email,
+            'username' => $user->username,
             'password' => 'SecurePassword123!',
-        ])->assertSessionHasErrors('email');
+        ])->assertSessionHasErrors('username');
         $this->assertGuest();
     }
 }

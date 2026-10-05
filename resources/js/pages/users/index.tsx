@@ -17,6 +17,7 @@ type User = {
     id: number;
     name: string;
     email: string;
+    username: string;
     is_admin: boolean;
     deleted_at: string | null;
     roles: Role[];
@@ -42,6 +43,7 @@ export default function UsersIndex({
     const { errors, flash } = usePage<PageData>().props;
     const [editing, setEditing] = useState<number | null>(null);
     const [name, setName] = useState('');
+    const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [passwordConfirmation, setPasswordConfirmation] = useState('');
@@ -53,6 +55,7 @@ export default function UsersIndex({
         setEditing(null);
         setName('');
         setEmail('');
+        setUsername('');
         setPassword('');
         setPasswordConfirmation('');
         setRoleIds([]);
@@ -62,6 +65,7 @@ export default function UsersIndex({
         setEditing(user.id);
         setName(user.name);
         setEmail(user.email);
+        setUsername(user.username);
         setPassword('');
         setPasswordConfirmation('');
         setRoleIds(user.roles.map((role) => role.id));
@@ -73,6 +77,7 @@ export default function UsersIndex({
         const data = {
             name,
             email,
+            username,
             role_ids: roleIds,
             ...(editing === null || password
                 ? { password, password_confirmation: passwordConfirmation }
@@ -129,6 +134,19 @@ export default function UsersIndex({
                                 onChange={(event) =>
                                     setName(event.target.value)
                                 }
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="user-username">Username</Label>
+                            <Input
+                                id="user-username"
+                                value={username}
+                                onChange={(event) =>
+                                    setUsername(event.target.value)
+                                }
+                                required
+                                maxLength={255}
+                                autoComplete="username"
                             />
                         </div>
                         <div className="space-y-1">
@@ -237,7 +255,7 @@ export default function UsersIndex({
                         >
                             <Input
                                 aria-label="Search users"
-                                placeholder="Search name or email"
+                                placeholder="Search name, username or email"
                                 value={searchText}
                                 onChange={(event) =>
                                     setSearchText(event.target.value)
@@ -264,7 +282,7 @@ export default function UsersIndex({
                                                 )}
                                             </p>
                                             <p className="text-sm text-muted-foreground">
-                                                {user.email}
+                                                {user.username} · {user.email}
                                             </p>
                                             <p className="mt-1 text-xs text-muted-foreground">
                                                 {user.deleted_at
