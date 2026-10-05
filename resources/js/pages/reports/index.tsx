@@ -6,6 +6,7 @@ import { create, destroy, duplicate, edit, show } from '@/routes/reports';
 type Report = {
     id: number;
     user_id: number;
+    can_edit: boolean;
     report_month: number;
     report_year: number;
     status: string;
@@ -50,7 +51,7 @@ export default function ReportsIndex({
                         </h1>
                         <p className="mt-2 text-sm text-muted-foreground">
                             Browse reports across the office. You can edit the
-                            reports you own.
+                            reports you own. Admins can edit all reports.
                         </p>
                     </div>
                     <Button asChild className="rounded-xl px-5">
@@ -137,7 +138,7 @@ export default function ReportsIndex({
                                                 <div className="flex items-center justify-end gap-4">
                                                     <Link
                                                         href={
-                                                            isOwner
+                                                            report.can_edit
                                                                 ? edit(
                                                                       report.id,
                                                                   )
@@ -147,7 +148,7 @@ export default function ReportsIndex({
                                                         }
                                                         className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                                                     >
-                                                        {isOwner
+                                                        {report.can_edit
                                                             ? 'Edit'
                                                             : 'View'}{' '}
                                                         <ArrowRight className="size-3.5" />

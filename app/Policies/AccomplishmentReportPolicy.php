@@ -24,7 +24,7 @@ class AccomplishmentReportPolicy
 
     public function update(User $user, AccomplishmentReport $report): bool
     {
-        return $report->user_id === $user->id;
+        return $user->is_admin || $report->user_id === $user->id;
     }
 
     public function duplicate(User $user, AccomplishmentReport $report): bool

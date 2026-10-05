@@ -282,14 +282,23 @@ class AccomplishmentReportTest extends TestCase
             ->etc());
     }
 
-    public function test_admin_can_view_but_cannot_edit_another_users_report(): void
+    public function test_admin_can_edit_another_users_report_without_changing_ownership(): void
     {
         $owner = User::factory()->create();
         $admin = User::factory()->create(['is_admin' => true]);
         $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
 
-        $this->actingAs($admin)->get(route('reports.show', $report))->assertOk();
-        $this->get(route('reports.edit', $report))->assertForbidden();
+        $this->actingAs($admin)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('reports.data.0.can_edit', true)->etc());
+        $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('canEdit', true)->etc());
+        $this->get(route('reports.edit', $report))->assertOk();
+        $this->put(route('reports.update', $report), [
+            'report_month' => 10, 'report_year' => 2026, 'quantity_mode' => 'custom',
+            ...$this->signatories($owner), 'entries' => [], 'user_id' => $admin->id,
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(10, $report->fresh()->report_month);
+        $this->assertSame($owner->id, $report->fresh()->user_id);
     }
 
     public function test_finalizing_with_removed_last_entry_is_rejected(): void

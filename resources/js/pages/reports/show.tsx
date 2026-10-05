@@ -126,7 +126,8 @@ export default function ReportShow({
                         </p>
                         {!canEdit && (
                             <p className="mt-2 text-sm font-medium">
-                                View only — only the owner can make changes.
+                                View only — only the owner or an admin can make
+                                changes.
                             </p>
                         )}
                     </div>

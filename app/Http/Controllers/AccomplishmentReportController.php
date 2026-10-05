@@ -30,7 +30,12 @@ class AccomplishmentReportController extends Controller
             ->orderByDesc('report_year')
             ->orderByDesc('report_month')
             ->latest('id')
-            ->paginate(15);
+            ->paginate(15)
+            ->through(function (AccomplishmentReport $report): AccomplishmentReport {
+                $report->setAttribute('can_edit', Gate::allows('update', $report));
+
+                return $report;
+            });
 
         return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id]);
     }
