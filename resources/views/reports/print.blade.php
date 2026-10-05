@@ -33,7 +33,7 @@
         .signatories { width: 100%; border-collapse: collapse; page-break-inside: avoid; }
         .signatories td { width: 50%; vertical-align: top; padding: 0 7px 10px; }
         .approved-block { width: 45%; margin: 22px auto 0; text-align: center; page-break-inside: avoid; }
-        .signatory-label { padding-bottom: 34px; }
+        .signatory-label { padding-bottom: 36pt; }
         .signatory-text { display: inline-table; width: auto; border-collapse: collapse; }
         .signatory-text td { width: auto; padding: 0; }
         .signatory-text .signatory-name { font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; }
