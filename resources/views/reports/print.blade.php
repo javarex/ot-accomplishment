@@ -24,6 +24,7 @@
         .report-table tr { page-break-inside: avoid; }
         .report-table tbody td { border-top: 0; border-bottom: 0; }
         .report-table tbody tr:last-child td { border-bottom: .5pt solid #222; }
+        .task-accomplished { white-space: pre-line; }
         .date-column { width: 18.2%; }
         .quantity-column { width: 16.4%; text-align: center; }
         .amount { font-family: "DejaVu Sans", sans-serif; }
@@ -61,7 +62,7 @@
     <thead><tr><th class="date-column">DATE</th><th class="quantity-column">QUANTITY</th>@if ($canViewComputation && ($preview || $report->is_jo))<th style="width: 14%">{{ $report->is_jo ? 'DAILY RATE' : 'HOURLY RATE' }}</th>@endif<th>TASK ACCOMPLISHED</th></tr></thead>
     <tbody>
     @foreach ($report->entries as $entry)
-        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity_mode === 'time' && $entry->time_minutes !== null ? \App\Services\Accomplishments\OvertimeQuantity::format($entry->time_minutes) : $entry->quantity }}</td>@if ($canViewComputation && ($preview || $report->is_jo))<td><span class="amount">{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) !== null ? '₱'.number_format((float) ($report->is_jo ? $report->daily_rate : $report->hourly_rate), 2, '.', ',') : '—' }}</span></td>@endif<td>{{ $entry->task_accomplished ?: '—' }}</td></tr>
+        <tr><td>{{ $entry->accomplishment_date->format('F j, Y') }}</td><td class="quantity-column">{{ $entry->quantity_mode === 'time' && $entry->time_minutes !== null ? \App\Services\Accomplishments\OvertimeQuantity::format($entry->time_minutes) : $entry->quantity }}</td>@if ($canViewComputation && ($preview || $report->is_jo))<td><span class="amount">{{ ($report->is_jo ? $report->daily_rate : $report->hourly_rate) !== null ? '₱'.number_format((float) ($report->is_jo ? $report->daily_rate : $report->hourly_rate), 2, '.', ',') : '—' }}</span></td>@endif<td class="task-accomplished">{{ $entry->task_accomplished ?: '—' }}</td></tr>
     @endforeach
     </tbody>
 </table>
