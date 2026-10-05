@@ -8,11 +8,12 @@
         body { font-family: "Times New Roman", Times, serif; color: #111; font-size: 12pt; }
         .toolbar { background: #f2f4f7; padding: 12px; margin: -10px -10px 22px; font: 13px Arial, sans-serif; }
         .toolbar a, .toolbar button { margin-right: 10px; padding: 6px 10px; }
-        .header { position: fixed; top: -31mm; width: 100%; }
-        .header td { text-align: center; vertical-align: middle; }
-        .logo { width: 65px; max-height: 65px; object-fit: contain; }
+        .header { position: fixed; top: -31mm; left: -60px; width: 748px; border-collapse: collapse; }
+        .header td { text-align: center; vertical-align: middle; padding: 0; }
+        .header .logo-cell { width: 94.11px; }
+        .logo { width: 94.11px; height: 94.11px; object-fit: contain; }
         .province { font: bold 12pt Arial, sans-serif; margin: 1px 0 3px; }
-        .office { font: bold 12pt Arial, sans-serif; margin: 2px 0 4px; }
+        .office { font: bold 12pt Arial, sans-serif; margin: 2px 0 4px; white-space: nowrap; }
         .address { font: bold 10pt Arial, sans-serif; line-height: 1.2; white-space: pre-line; }
         h1 { text-align: center; font-size: 12pt; margin: 17px 0 8px; }
         .period { text-align: center; font-size: 12pt; margin-bottom: 15px; }
@@ -38,10 +39,10 @@
         .signatory-text .signatory-position { padding-top: 4px; font-size: 12pt; }
         .approved-block .signatory-text { margin: 0 auto; }
         .approved-block .signatory-text td { text-align: center; }
-        .footer { position: fixed; bottom: -35mm; left: 0; right: 0; font-family: Ovo, Times, serif; font-size: 8pt; line-height: 1.2; color: #e5b807; text-align: center; }
+        .footer { position: fixed; bottom: -27mm; left: 0; right: 0; font-family: Ovo, Times, serif; font-size: 8pt; line-height: 1.2; color: #e5b807; text-align: center; }
         .footer img { display: block; width: 150px; height: auto; margin: 0 auto 5px; }
         .footer-text p, .footer-text div { margin: 0; }
-        @media screen { .header { position: static; margin-bottom: 15px; } .footer { position: static; margin-top: 24px; } }
+        @media screen { .header { position: relative; top: auto; margin-bottom: 15px; } .footer { position: static; margin-top: 24px; } }
         @media print { .toolbar { display: none; } }
     </style>
 </head>
@@ -49,10 +50,10 @@
 @if ($preview)
     <div class="toolbar"><a href="{{ route('reports.show', $report) }}">Back to report</a><button onclick="window.print()">Print preview</button>@can('generate', $report)<form method="post" action="{{ route('reports.generate-docx', $report) }}" style="display: inline">@csrf<button type="submit">Export DOCX</button></form>@endcan</div>
 @endif
-<table class="header"><tr>
-    <td style="width: 75px">@if ($leftLogo)<img class="logo" src="{{ $leftLogo }}" alt="Left logo">@endif</td>
-    <td><div class="province">{{ $template->province }}</div><div class="office">{{ $template->office_name }}</div><div class="address">{{ $template->office_address }}</div></td>
-    <td style="width: 75px">@if ($rightLogo)<img class="logo" src="{{ $rightLogo }}" alt="Right logo">@endif</td>
+<table class="header"><colgroup><col style="width: 94.11px"><col style="width: 559.78px"><col style="width: 94.11px"></colgroup><tr>
+    <td class="logo-cell" style="width: 94.11px">@if ($leftLogo)<img class="logo" src="{{ $leftLogo }}" alt="Left logo">@endif</td>
+    <td style="width: 559.78px"><div class="province">{{ $template->province }}</div><div class="office">{{ $template->office_name }}</div><div class="address">{{ $template->office_address }}</div></td>
+    <td class="logo-cell" style="width: 94.11px">@if ($rightLogo)<img class="logo" src="{{ $rightLogo }}" alt="Right logo">@endif</td>
 </tr></table>
 <h1>{{ $template->report_title }}</h1>
 <div class="period">{{ \Carbon\CarbonImmutable::create($report->report_year, $report->report_month, 1)->format('F Y') }}</div>

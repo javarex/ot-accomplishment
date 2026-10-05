@@ -51,7 +51,7 @@ class ReportGenerationController extends Controller
         ]]);
         $pdf->loadHtml($html);
         $pdf->render();
-        $pdf->getCanvas()->page_text(280, 920, 'Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.35, 0.35, 0.35]);
+        $pdf->getCanvas()->page_text(280, 900, 'Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.35, 0.35, 0.35]);
         $report->update(['status' => AccomplishmentReport::GENERATED, 'generated_at' => now()]);
 
         return response($pdf->output(), 200, [
