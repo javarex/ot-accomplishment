@@ -46,7 +46,7 @@ class AccomplishmentReportController extends Controller
             $report->entries->each->makeHidden('hourly_rate');
         }
 
-        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report), 'canSetHourlyRate' => Gate::allows('editComputation', $report), 'canViewComputation' => $canViewComputation, 'overtimePay' => $overtimePay]);
+        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report), 'canGeneratePdf' => Gate::allows('generatePdf', $report), 'canSetHourlyRate' => Gate::allows('editComputation', $report), 'canViewComputation' => $canViewComputation, 'overtimePay' => $overtimePay]);
     }
 
     public function create(Request $request): Response

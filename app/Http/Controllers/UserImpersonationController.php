@@ -3,13 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 
 class UserImpersonationController extends Controller
 {
-    public function store(Request $request, User $user): RedirectResponse
+    public function store(Request $request, User $user): Response
     {
         abort_unless($request->user()->is_admin && ! $request->session()->has('impersonator_id'), 403);
         abort_if($user->is_admin || $user->id === $request->user()->id, 403);
@@ -18,10 +19,13 @@ class UserImpersonationController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('dashboard')->with('status', 'You are viewing the app as '.$user->name.'.');
+        Inertia::clearHistory();
+        $request->session()->flash('status', 'You are viewing the app as '.$user->name.'.');
+
+        return Inertia::location(route('dashboard'));
     }
 
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request): Response
     {
         $originalId = $request->session()->get('impersonator_id');
         abort_unless(is_int($originalId), 403);
@@ -32,6 +36,9 @@ class UserImpersonationController extends Controller
         Auth::login($original);
         $request->session()->regenerate();
 
-        return redirect()->route('users.index')->with('status', 'Returned to your admin account.');
+        Inertia::clearHistory();
+        $request->session()->flash('status', 'Returned to your admin account.');
+
+        return Inertia::location(route('users.index'));
     }
 }

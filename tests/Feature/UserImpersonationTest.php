@@ -36,6 +36,28 @@ class UserImpersonationTest extends TestCase
             ->component('access-control/index')->where('permissions.manageAccess', true)->etc());
     }
 
+    public function test_inertia_impersonation_switches_force_a_fresh_page_for_each_identity(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $member = User::factory()->create();
+
+        $this->actingAs($admin)->withHeader('X-Inertia', 'true')
+            ->post(route('impersonation.store', $member))
+            ->assertStatus(409)->assertHeader('X-Inertia-Location', route('dashboard'));
+        $this->assertAuthenticatedAs($member);
+        $this->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('auth.user.id', $member->id)
+            ->where('impersonation.name', $member->name)->etc());
+        $this->get(route('dashboard'))->assertInertia(fn (Assert $page) => $page
+            ->where('auth.user.id', $member->id)->etc());
+
+        $this->delete(route('impersonation.destroy'))
+            ->assertStatus(409)->assertHeader('X-Inertia-Location', route('users.index'));
+        $this->assertAuthenticatedAs($admin);
+        $this->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('auth.user.id', $admin->id)->where('impersonation', null)->etc());
+    }
+
     public function test_only_admin_can_impersonate_and_targets_must_be_active_non_admin_users(): void
     {
         $admin = User::factory()->create(['is_admin' => true]);

@@ -1,10 +1,10 @@
 import { formatPeso } from '@/lib/currency';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { edit, index, preview } from '@/routes/reports';
+import { edit, generate, index, preview } from '@/routes/reports';
 import { update as updateHourlyRate } from '@/routes/reports/hourly-rate';
 import { update as updateDailyRate } from '@/routes/reports/daily-rate';
 
@@ -58,12 +58,14 @@ function SignatoryDetails({
 export default function ReportShow({
     report,
     canEdit,
+    canGeneratePdf,
     overtimePay,
     canViewComputation,
     canSetHourlyRate,
 }: {
     report: Report;
     canEdit: boolean;
+    canGeneratePdf: boolean;
     canViewComputation: boolean;
     canSetHourlyRate: boolean;
     overtimePay: {
@@ -73,6 +75,7 @@ export default function ReportShow({
         net_cents: number;
     } | null;
 }) {
+    const { csrfToken } = usePage<{ csrfToken: string }>().props;
     const [hourlyRate, setHourlyRate] = useState(report.hourly_rate ?? '');
     const [dailyRate, setDailyRate] = useState(report.daily_rate ?? '');
     const [joTaxPercent, setJoTaxPercent] = useState(
@@ -131,6 +134,20 @@ export default function ReportShow({
                                 Print preview
                             </Link>
                         </Button>
+                        {canGeneratePdf && (
+                            <form
+                                method="post"
+                                action={generate(report.id).url}
+                                target="_blank"
+                            >
+                                <input
+                                    type="hidden"
+                                    name="_token"
+                                    value={csrfToken}
+                                />
+                                <Button type="submit">Generate PDF</Button>
+                            </form>
+                        )}
                         {canEdit && (
                             <Button asChild>
                                 <Link href={edit(report.id)}>Edit report</Link>

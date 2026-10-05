@@ -29,7 +29,7 @@ class ReportGenerationController extends Controller
 
     public function generate(AccomplishmentReport $report): Response
     {
-        Gate::authorize('generate', $report);
+        Gate::authorize('generatePdf', $report);
         $this->ensureComplete($report, requireComputation: $report->is_jo);
         $html = view('reports.print', $this->viewData($report, false))->render();
         $options = new Options;

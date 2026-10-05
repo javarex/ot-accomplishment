@@ -37,6 +37,11 @@ class AccomplishmentReportPolicy
         return $this->update($user, $report);
     }
 
+    public function generatePdf(User $user, AccomplishmentReport $report): bool
+    {
+        return $this->generate($user, $report) || $user->hasPermission('generate_all_report_pdfs');
+    }
+
     public function importDtr(User $user, AccomplishmentReport $report): bool
     {
         return $this->update($user, $report);

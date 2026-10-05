@@ -24,7 +24,7 @@ class AccessControlTest extends TestCase
         $managePermission = Permission::where('key', 'manage_access')->firstOrFail();
 
         $this->actingAs($admin)->get(route('access-control.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->component('access-control/index')->has('users', 2)->has('availablePermissions', 3)
+            ->component('access-control/index')->has('users', 2)->has('availablePermissions', 4)
             ->where('permissions.manageAccess', true)->etc());
         $this->post(route('access-control.roles.store'), [
             'name' => 'Payroll Viewer', 'permission_ids' => [$viewPermission->id],
@@ -160,6 +160,29 @@ class AccessControlTest extends TestCase
         $this->put(route('reports.hourly-rate.update', $report), ['hourly_rate' => '300.00'])->assertSessionHasNoErrors();
         $this->assertSame('300.00', $report->fresh()->hourly_rate);
         $this->get(route('access-control.index'))->assertForbidden();
+    }
+
+    public function test_pdf_permission_allows_other_reports_without_granting_edit_or_docx_access(): void
+    {
+        $owner = User::factory()->create();
+        $user = User::factory()->create();
+        $report = $this->report($owner);
+
+        $this->actingAs($user)->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('canGeneratePdf', false)->etc());
+        $this->post(route('reports.generate', $report))->assertForbidden();
+
+        $role = Role::create(['name' => 'PDF Generator']);
+        $role->permissions()->attach(Permission::where('key', 'generate_all_report_pdfs')->firstOrFail());
+        $user->roles()->attach($role);
+        $this->actingAs($user->fresh())->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
+            ->where('canGeneratePdf', true)->where('canEdit', false)->where('canViewComputation', false)->etc());
+        $this->post(route('reports.generate', $report))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->get(route('reports.edit', $report))->assertForbidden();
+        $this->post(route('reports.generate-docx', $report))->assertForbidden();
+
+        $report->entries()->update(['task_accomplished' => '']);
+        $this->post(route('reports.generate', $report))->assertSessionHasErrors('entries');
     }
 
     private function report(User $user): AccomplishmentReport
