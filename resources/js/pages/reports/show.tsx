@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { edit, generate, index, preview } from '@/routes/reports';
+import { duplicate, edit, generate, index, preview } from '@/routes/reports';
 import { update as updateHourlyRate } from '@/routes/reports/hourly-rate';
 import { update as updateDailyRate } from '@/routes/reports/daily-rate';
 
@@ -58,6 +58,7 @@ function SignatoryDetails({
 export default function ReportShow({
     report,
     canEdit,
+    canDuplicate,
     canGeneratePdf,
     overtimePay,
     canViewComputation,
@@ -65,6 +66,7 @@ export default function ReportShow({
 }: {
     report: Report;
     canEdit: boolean;
+    canDuplicate: boolean;
     canGeneratePdf: boolean;
     canViewComputation: boolean;
     canSetHourlyRate: boolean;
@@ -134,6 +136,23 @@ export default function ReportShow({
                                 Print preview
                             </Link>
                         </Button>
+                        {canDuplicate && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                    if (
+                                        window.confirm(
+                                            'Duplicate this report as a new draft?',
+                                        )
+                                    ) {
+                                        router.post(duplicate(report.id).url);
+                                    }
+                                }}
+                            >
+                                Duplicate
+                            </Button>
+                        )}
                         {canGeneratePdf && (
                             <form
                                 method="post"

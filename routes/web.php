@@ -25,6 +25,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('access-control/roles/{role}', [AccessControlController::class, 'updateRole'])->name('access-control.roles.update');
     Route::delete('access-control/roles/{role}', [AccessControlController::class, 'destroyRole'])->name('access-control.roles.destroy');
     Route::put('access-control/users/{user}/roles', [AccessControlController::class, 'updateUserRoles'])->name('access-control.users.roles.update');
+    Route::post('reports/{report}/duplicate', [AccomplishmentReportController::class, 'duplicate'])->name('reports.duplicate');
     Route::resource('reports', AccomplishmentReportController::class);
     Route::put('reports/{report}/hourly-rate', [AccomplishmentReportController::class, 'updateHourlyRate'])->name('reports.hourly-rate.update');
     Route::put('reports/{report}/daily-rate', [AccomplishmentReportController::class, 'updateDailyRate'])->name('reports.daily-rate.update');

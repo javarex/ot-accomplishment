@@ -17,6 +17,21 @@ class AccomplishmentReportTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_report_table_includes_preparer_details_and_keeps_the_owner(): void
+    {
+        $owner = User::factory()->create();
+        $signatory = Signatory::create(['user_id' => $owner->id, 'name' => 'Linked Preparer',
+            'position' => 'Staff', 'signatory_type' => 'prepared_by']);
+        AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9,
+            'report_year' => 2026, 'prepared_name' => 'Report Preparer', 'prepared_by_id' => $signatory->id]);
+
+        $this->actingAs($owner)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('reports.data.0.user_id', $owner->id)
+            ->where('reports.data.0.user.name', $owner->name)
+            ->where('reports.data.0.prepared_name', 'Report Preparer')
+            ->where('reports.data.0.prepared_by.name', 'Linked Preparer')->etc());
+    }
+
     public function test_user_can_save_draft_with_free_text_quantity_and_blank_task(): void
     {
         $user = User::factory()->create();

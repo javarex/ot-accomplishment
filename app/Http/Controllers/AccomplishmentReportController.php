@@ -24,8 +24,8 @@ class AccomplishmentReportController extends Controller
         Gate::authorize('viewAny', AccomplishmentReport::class);
 
         $reports = AccomplishmentReport::query()
-            ->select(['id', 'user_id', 'report_month', 'report_year', 'status'])
-            ->with('user:id,name')
+            ->select(['id', 'user_id', 'report_month', 'report_year', 'status', 'prepared_name', 'prepared_by_id'])
+            ->with(['user:id,name', 'preparedBy:id,name'])
             ->withCount('entries')
             ->orderByDesc('report_year')
             ->orderByDesc('report_month')
@@ -46,7 +46,7 @@ class AccomplishmentReportController extends Controller
             $report->entries->each->makeHidden('hourly_rate');
         }
 
-        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report), 'canGeneratePdf' => Gate::allows('generatePdf', $report), 'canSetHourlyRate' => Gate::allows('editComputation', $report), 'canViewComputation' => $canViewComputation, 'overtimePay' => $overtimePay]);
+        return Inertia::render('reports/show', ['report' => $report, 'canEdit' => Gate::allows('update', $report), 'canDuplicate' => Gate::allows('duplicate', $report), 'canGeneratePdf' => Gate::allows('generatePdf', $report), 'canSetHourlyRate' => Gate::allows('editComputation', $report), 'canViewComputation' => $canViewComputation, 'overtimePay' => $overtimePay]);
     }
 
     public function create(Request $request): Response
@@ -214,6 +214,30 @@ class AccomplishmentReportController extends Controller
         $report->update($data);
 
         return back()->with('status', 'JO rate and tax updated.');
+    }
+
+    public function duplicate(AccomplishmentReport $report): RedirectResponse
+    {
+        Gate::authorize('duplicate', $report);
+
+        $copy = DB::transaction(function () use ($report): AccomplishmentReport {
+            $copy = $report->replicate(['status', 'generated_at']);
+            $copy->setRelations([]);
+            $copy->status = AccomplishmentReport::DRAFT;
+            $copy->generated_at = null;
+            $copy->save();
+
+            foreach ($report->entries()->get() as $entry) {
+                $entryCopy = $entry->replicate(['accomplishment_report_id', 'dtr_entry_id']);
+                $entryCopy->setRelations([]);
+                $entryCopy->dtr_entry_id = null;
+                $copy->entries()->save($entryCopy);
+            }
+
+            return $copy;
+        });
+
+        return redirect()->route('reports.edit', $copy)->with('status', 'Report duplicated as a new draft.');
     }
 
     public function destroy(AccomplishmentReport $report): RedirectResponse

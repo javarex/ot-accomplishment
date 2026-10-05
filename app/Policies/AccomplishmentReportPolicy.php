@@ -27,6 +27,11 @@ class AccomplishmentReportPolicy
         return $report->user_id === $user->id;
     }
 
+    public function duplicate(User $user, AccomplishmentReport $report): bool
+    {
+        return $report->user_id === $user->id;
+    }
+
     public function delete(User $user, AccomplishmentReport $report): bool
     {
         return $report->user_id === $user->id;

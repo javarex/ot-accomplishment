@@ -1,7 +1,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { ArrowRight, FilePlus2, FileText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { create, destroy, edit, show } from '@/routes/reports';
+import { create, destroy, duplicate, edit, show } from '@/routes/reports';
 
 type Report = {
     id: number;
@@ -11,6 +11,8 @@ type Report = {
     status: string;
     entries_count: number;
     user?: { name: string };
+    prepared_name: string | null;
+    prepared_by: { name: string } | null;
 };
 type PageData = { flash: { status?: string } };
 
@@ -67,7 +69,8 @@ export default function ReportsIndex({
                         <div>
                             <h2 className="font-semibold">All reports</h2>
                             <p className="text-xs text-muted-foreground">
-                                Reporting period, owner, and current status
+                                Reporting period, owner, prepared by, and
+                                current status
                             </p>
                         </div>
                         <FileText className="size-5 text-muted-foreground/60" />
@@ -80,6 +83,7 @@ export default function ReportsIndex({
                                         Reporting period
                                     </th>
                                     <th className="px-5 py-3">Owner</th>
+                                    <th className="px-5 py-3">Prepared by</th>
                                     <th className="px-5 py-3">Entries</th>
                                     <th className="px-5 py-3">Status</th>
                                     <th className="px-5 py-3 text-right md:px-6">
@@ -114,6 +118,11 @@ export default function ReportsIndex({
                                                     </span>
                                                 )}
                                             </td>
+                                            <td className="px-5 py-4 text-muted-foreground">
+                                                {report.prepared_name ||
+                                                    report.prepared_by?.name ||
+                                                    'Not set'}
+                                            </td>
                                             <td className="px-5 py-4 text-muted-foreground tabular-nums">
                                                 {report.entries_count}
                                             </td>
@@ -143,6 +152,28 @@ export default function ReportsIndex({
                                                             : 'View'}{' '}
                                                         <ArrowRight className="size-3.5" />
                                                     </Link>
+                                                    {isOwner && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                if (
+                                                                    window.confirm(
+                                                                        'Duplicate this report as a new draft?',
+                                                                    )
+                                                                ) {
+                                                                    router.post(
+                                                                        duplicate(
+                                                                            report.id,
+                                                                        ).url,
+                                                                    );
+                                                                }
+                                                            }}
+                                                        >
+                                                            Duplicate
+                                                        </Button>
+                                                    )}
                                                     {isOwner && (
                                                         <button
                                                             type="button"
