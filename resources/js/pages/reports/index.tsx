@@ -1,7 +1,14 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Form, Head, Link, router, usePage } from '@inertiajs/react';
 import { ArrowRight, FilePlus2, FileText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { create, destroy, duplicate, edit, show } from '@/routes/reports';
+import {
+    create,
+    destroy,
+    duplicate,
+    edit,
+    index,
+    show,
+} from '@/routes/reports';
 
 type Report = {
     id: number;
@@ -28,8 +35,10 @@ function statusClass(status: string): string {
 export default function ReportsIndex({
     reports,
     currentUserId,
+    filters,
 }: {
     currentUserId: number;
+    filters: { year: number; month: number; search: string };
     reports: {
         data: Report[];
         links: Array<{ url: string | null; label: string; active: boolean }>;
@@ -50,8 +59,8 @@ export default function ReportsIndex({
                             Accomplishment reports
                         </h1>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            Browse reports across the office. You can edit the
-                            reports you own. Admins can edit all reports.
+                            Browse all reports by reporting period. You can edit
+                            your own reports. Super admins can edit all reports.
                         </p>
                     </div>
                     <Button asChild className="rounded-xl px-5">
@@ -65,10 +74,60 @@ export default function ReportsIndex({
                         {flash.status}
                     </div>
                 )}
+                <Form
+                    {...index.form()}
+                    className="flex flex-wrap items-end gap-4"
+                    key={`${filters.year}-${filters.month}-${filters.search}`}
+                >
+                    <label className="grid gap-2 text-sm font-medium">
+                        Year
+                        <input
+                            type="number"
+                            name="year"
+                            min="1900"
+                            max="9999"
+                            required
+                            defaultValue={filters.year}
+                            className="h-10 w-28 rounded-md border bg-background px-3"
+                        />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium">
+                        Month
+                        <select
+                            name="month"
+                            defaultValue={filters.month}
+                            className="h-10 rounded-md border bg-background px-3"
+                        >
+                            {Array.from({ length: 12 }, (_, month) => (
+                                <option key={month + 1} value={month + 1}>
+                                    {new Date(2000, month, 1).toLocaleString(
+                                        'en',
+                                        { month: 'long' },
+                                    )}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium">
+                        Search
+                        <input
+                            type="search"
+                            name="search"
+                            placeholder="Owner or Prepared by"
+                            maxLength={255}
+                            defaultValue={filters.search}
+                            className="h-10 w-full rounded-md border bg-background px-3 sm:w-64"
+                        />
+                    </label>
+                    <Button type="submit">Apply filters</Button>
+                    <Button variant="outline" asChild>
+                        <Link href={index()}>This month</Link>
+                    </Button>
+                </Form>
                 <section className="overflow-hidden rounded-2xl border bg-card shadow-sm shadow-black/2">
                     <div className="flex items-center justify-between border-b px-5 py-4 md:px-6">
                         <div>
-                            <h2 className="font-semibold">All reports</h2>
+                            <h2 className="font-semibold">Reports</h2>
                             <p className="text-xs text-muted-foreground">
                                 Reporting period, owner, prepared by, and
                                 current status

@@ -7,6 +7,7 @@ use App\Models\Signatory;
 use App\Services\Accomplishments\DtrImportStager;
 use App\Services\Accomplishments\OvertimePayCalculator;
 use App\Services\Accomplishments\ReportWriter;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,31 @@ class AccomplishmentReportController extends Controller
     {
         Gate::authorize('viewAny', AccomplishmentReport::class);
 
+        $validated = $request->validate([
+            'year' => ['sometimes', 'required', 'integer', 'between:1900,9999'],
+            'month' => ['sometimes', 'required', 'integer', 'between:1,12'],
+            'search' => ['nullable', 'string', 'max:255'],
+        ]);
+        $filters = [
+            'year' => (int) ($validated['year'] ?? now()->year),
+            'month' => (int) ($validated['month'] ?? now()->month),
+            'search' => trim($validated['search'] ?? ''),
+        ];
+
         $reports = AccomplishmentReport::query()
+            ->where('report_year', $filters['year'])
+            ->where('report_month', $filters['month'])
+            ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
+                $search = '%'.$filters['search'].'%';
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->whereHas('user', fn (Builder $owner) => $owner->whereLike('name', $search))
+                        ->orWhereLike('prepared_name', $search)
+                        ->orWhere(function (Builder $query) use ($search): void {
+                            $query->where(fn (Builder $query) => $query->whereNull('prepared_name')->orWhere('prepared_name', ''))
+                                ->whereHas('preparedBy', fn (Builder $preparer) => $preparer->whereLike('name', $search));
+                        });
+                });
+            })
             ->select(['id', 'user_id', 'report_month', 'report_year', 'status', 'prepared_name', 'prepared_by_id'])
             ->with(['user:id,name', 'preparedBy:id,name'])
             ->withCount('entries')
@@ -31,13 +56,14 @@ class AccomplishmentReportController extends Controller
             ->orderByDesc('report_month')
             ->latest('id')
             ->paginate(15)
+            ->appends($filters)
             ->through(function (AccomplishmentReport $report): AccomplishmentReport {
                 $report->setAttribute('can_edit', Gate::allows('update', $report));
 
                 return $report;
             });
 
-        return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id]);
+        return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id, 'filters' => $filters]);
     }
 
     public function show(AccomplishmentReport $report, OvertimePayCalculator $calculator): Response

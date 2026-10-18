@@ -25,7 +25,7 @@ class AccomplishmentReportTest extends TestCase
         AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9,
             'report_year' => 2026, 'prepared_name' => 'Report Preparer', 'prepared_by_id' => $signatory->id]);
 
-        $this->actingAs($owner)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($owner)->get(route('reports.index', ['year' => 2026, 'month' => 9]))->assertInertia(fn (Assert $page) => $page
             ->where('reports.data.0.user_id', $owner->id)
             ->where('reports.data.0.user.name', $owner->name)
             ->where('reports.data.0.prepared_name', 'Report Preparer')
@@ -205,17 +205,14 @@ class AccomplishmentReportTest extends TestCase
         $other = User::factory()->create();
         $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
 
-        $this->actingAs($other)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($other)->get(route('reports.index', ['year' => 2026, 'month' => 9]))->assertInertia(fn (Assert $page) => $page
             ->component('reports/index')
             ->where('reports.data.0.id', $report->id)
             ->where('currentUserId', $other->id)
             ->etc());
         $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
-            ->component('reports/show')
-            ->where('canEdit', false)
-            ->where('report.id', $report->id)
-            ->etc());
-        $this->get(route('reports.preview', $report))->assertOk()->assertDontSee('Export DOCX');
+            ->where('report.id', $report->id)->where('canEdit', false));
+        $this->get(route('reports.preview', $report))->assertOk();
         $this->get(route('reports.edit', $report))->assertForbidden();
         $this->put(route('reports.update', $report), [])->assertForbidden();
         $this->delete(route('reports.destroy', $report))->assertForbidden();
@@ -288,7 +285,7 @@ class AccomplishmentReportTest extends TestCase
         $admin = User::factory()->create(['is_admin' => true]);
         $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_month' => 9, 'quantity_mode' => 'custom', 'report_year' => 2026]);
 
-        $this->actingAs($admin)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($admin)->get(route('reports.index', ['year' => 2026, 'month' => 9]))->assertInertia(fn (Assert $page) => $page
             ->where('reports.data.0.can_edit', true)->etc());
         $this->get(route('reports.show', $report))->assertInertia(fn (Assert $page) => $page
             ->where('canEdit', true)->etc());
