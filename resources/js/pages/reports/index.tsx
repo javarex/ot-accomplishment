@@ -196,22 +196,21 @@ export default function ReportsIndex({
                                             <td className="px-5 py-4 md:px-6">
                                                 <div className="flex items-center justify-end gap-4">
                                                     <Link
-                                                        href={
-                                                            report.can_edit
-                                                                ? edit(
-                                                                      report.id,
-                                                                  )
-                                                                : show(
-                                                                      report.id,
-                                                                  )
-                                                        }
+                                                        href={show(report.id)}
                                                         className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                                                     >
-                                                        {report.can_edit
-                                                            ? 'Edit'
-                                                            : 'View'}{' '}
+                                                        View
                                                         <ArrowRight className="size-3.5" />
                                                     </Link>
+                                                    {report.can_edit && (
+                                                        <Link
+                                                            href={edit(report.id)}
+                                                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                                                        >
+                                                            Edit
+                                                            <ArrowRight className="size-3.5" />
+                                                        </Link>
+                                                    )}
                                                     {isOwner && (
                                                         <Button
                                                             type="button"

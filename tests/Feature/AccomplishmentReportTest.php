@@ -374,6 +374,30 @@ class AccomplishmentReportTest extends TestCase
         $this->assertSame('generated', $report->fresh()->status);
     }
 
+    public function test_pdf_and_preview_sort_entries_by_date(): void
+    {
+        $user = User::factory()->create();
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'custom', ...$this->signatories($user)]);
+        foreach ([
+            ['2026-09-20', 0, 'Latest accomplishment.'],
+            ['2026-09-10', 3, 'Second accomplishment.'],
+            ['2026-09-02', 1, 'First accomplishment.'],
+        ] as [$date, $order, $task]) {
+            $report->entries()->create(['accomplishment_date' => $date, 'sort_order' => $order, 'task_accomplished' => $task, 'quantity' => '1 document']);
+        }
+
+        $this->actingAs($user)->get(route('reports.preview', $report))
+            ->assertSeeInOrder(['First accomplishment.', 'Second accomplishment.', 'Latest accomplishment.']);
+        $response = $this->post(route('reports.generate', $report));
+
+        $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $text = (new Parser)->parseContent($response->getContent())->getText();
+        $this->assertStringContainsString('Latest accomplishment.', $text);
+        $this->assertLessThan(strpos($text, 'Second accomplishment.'), strpos($text, 'First accomplishment.'));
+        $this->assertLessThan(strpos($text, 'Latest accomplishment.'), strpos($text, 'Second accomplishment.'));
+        $this->assertSame([0, 1, 3], $report->entries()->pluck('sort_order')->all());
+    }
+
     public function test_complete_report_exports_docx_with_table_logos_and_footer(): void
     {
         $user = User::factory()->create();

@@ -77,6 +77,7 @@ class ReportGenerationController extends Controller
     private function viewData(AccomplishmentReport $report, bool $preview): array
     {
         $report->load(['entries', 'preparedBy', 'certifiedBy', 'approvedBy']);
+        $report->setRelation('entries', $report->entries->sortBy('accomplishment_date')->values());
         $template = ReportTemplate::firstOrCreate(['user_id' => $report->user_id], ['footer_text' => ReportTemplate::DEFAULT_FOOTER])->refresh();
         $isDefaultOffice = $template->office_name === 'Provincial Information and Communications Technology Office';
 
