@@ -20,7 +20,7 @@ use Throwable;
 
 class AccomplishmentReportController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, OvertimePayCalculator $calculator): Response
     {
         Gate::authorize('viewAny', AccomplishmentReport::class);
 
@@ -34,6 +34,9 @@ class AccomplishmentReportController extends Controller
             'month' => (int) ($validated['month'] ?? now()->month),
             'search' => trim($validated['search'] ?? ''),
         ];
+
+        $canDisplayNetPay = (bool) $request->user()->is_admin;
+        $showNetPay = $canDisplayNetPay && $request->user()->show_report_net_pay;
 
         $reports = AccomplishmentReport::query()
             ->where('report_year', $filters['year'])
@@ -50,6 +53,9 @@ class AccomplishmentReportController extends Controller
                 });
             })
             ->select(['id', 'user_id', 'report_month', 'report_year', 'status', 'prepared_name', 'prepared_by_id'])
+            ->when($showNetPay, fn (Builder $query) => $query
+                ->addSelect(['quantity_mode', 'hourly_rate', 'is_jo', 'daily_rate', 'jo_tax_percent'])
+                ->with(['entries:id,accomplishment_report_id,accomplishment_date,quantity_mode,time_minutes']))
             ->with(['user:id,name', 'preparedBy:id,name'])
             ->withCount('entries')
             ->orderByDesc('report_year')
@@ -57,13 +63,23 @@ class AccomplishmentReportController extends Controller
             ->latest('id')
             ->paginate(15)
             ->appends($filters)
-            ->through(function (AccomplishmentReport $report): AccomplishmentReport {
+            ->through(function (AccomplishmentReport $report) use ($showNetPay, $calculator): AccomplishmentReport {
                 $report->setAttribute('can_edit', Gate::allows('update', $report));
+                if ($showNetPay) {
+                    $netPayCents = null;
+                    if ($report->quantity_mode === 'time' && $report->entries->isNotEmpty()) {
+                        $pay = $calculator->calculate($report);
+                        $netPayCents = $pay['complete'] ? $pay['net_cents'] : null;
+                    }
+                    $report->setAttribute('net_pay_cents', $netPayCents);
+                    $report->unsetRelation('entries');
+                    $report->makeHidden(['hourly_rate', 'daily_rate', 'jo_tax_percent']);
+                }
 
                 return $report;
             });
 
-        return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id, 'filters' => $filters]);
+        return Inertia::render('reports/index', ['reports' => $reports, 'currentUserId' => $request->user()->id, 'filters' => $filters, 'showNetPay' => $showNetPay]);
     }
 
     public function show(AccomplishmentReport $report, OvertimePayCalculator $calculator): Response

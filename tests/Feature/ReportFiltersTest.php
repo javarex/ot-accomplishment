@@ -13,6 +13,64 @@ class ReportFiltersTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_super_admin_can_enable_net_pay_for_time_based_reports(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true, 'show_report_net_pay' => true]);
+        $owner = User::factory()->create();
+        foreach ([
+            ['quantity_mode' => 'time', 'hourly_rate' => 100],
+            ['quantity_mode' => 'time', 'is_jo' => true, 'daily_rate' => 800, 'jo_tax_percent' => 10],
+            ['quantity_mode' => 'custom', 'hourly_rate' => 100],
+            ['quantity_mode' => 'time'],
+        ] as $attributes) {
+            $report = AccomplishmentReport::create(['user_id' => $owner->id, 'report_year' => 2026, 'report_month' => 9, ...$attributes]);
+            $report->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity_mode' => $attributes['quantity_mode'], 'time_minutes' => 60, 'quantity' => '1 hour', 'task_accomplished' => 'Completed work']);
+        }
+
+        $this->actingAs($admin)->get(route('reports.index', ['year' => 2026, 'month' => 9, 'show_net_pay' => 1]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('showNetPay', true)
+                ->where('reports.data.0.net_pay_cents', null)
+                ->where('reports.data.1.net_pay_cents', null)
+                ->where('reports.data.2.net_pay_cents', 9000)
+                ->where('reports.data.3.net_pay_cents', 10000)
+                ->missing('reports.data.3.entries')
+                ->missing('reports.data.3.hourly_rate'));
+    }
+
+    public function test_net_pay_is_off_by_default_and_cannot_be_enabled_by_staff(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $staff = User::factory()->create();
+        AccomplishmentReport::create(['user_id' => $staff->id, 'report_year' => 2026, 'report_month' => 9, 'quantity_mode' => 'time', 'hourly_rate' => 100]);
+
+        $this->actingAs($admin)->get(route('reports.index', ['year' => 2026, 'month' => 9]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('showNetPay', false)
+                ->missing('reports.data.0.net_pay_cents')
+                ->missing('reports.data.0.hourly_rate'));
+        $this->actingAs($staff)->get(route('reports.index', ['year' => 2026, 'month' => 9, 'show_net_pay' => 1]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('showNetPay', false)
+                ->missing('reports.data.0.net_pay_cents')
+                ->missing('reports.data.0.hourly_rate')
+                ->missing('reports.data.0.entries'));
+    }
+
+    public function test_saved_net_pay_preference_applies_to_later_pages(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true, 'show_report_net_pay' => true]);
+        for ($number = 0; $number < 16; $number++) {
+            AccomplishmentReport::create(['user_id' => $admin->id, 'report_year' => 2026, 'report_month' => 9]);
+        }
+
+        $this->actingAs($admin)->get(route('reports.index', ['year' => 2026, 'month' => 9, 'page' => 2]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('showNetPay', true)
+                ->where('reports.current_page', 2)
+                ->has('reports.data', 1));
+    }
+
     public function test_default_period_lists_reports_from_all_users(): void
     {
         $this->travelTo(now()->setDate(2026, 10, 18));

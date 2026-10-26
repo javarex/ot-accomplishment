@@ -17,6 +17,8 @@ class ProfileUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
-        return $this->profileRules($this->user()->id);
+        return [...$this->profileRules($this->user()->id),
+            'show_report_net_pay' => $this->user()->is_admin ? ['sometimes', 'required', 'boolean'] : ['prohibited'],
+        ];
     }
 }

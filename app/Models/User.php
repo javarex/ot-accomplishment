@@ -75,6 +75,7 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'is_admin' => 'boolean',
             'deleted_at' => 'datetime',
+            'show_report_net_pay' => 'boolean',
         ];
     }
 }

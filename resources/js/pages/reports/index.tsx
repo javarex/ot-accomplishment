@@ -1,6 +1,21 @@
 import { Form, Head, Link, router, usePage } from '@inertiajs/react';
-import { ArrowRight, FilePlus2, FileText, Trash2 } from 'lucide-react';
+import {
+    ChevronDown,
+    Copy,
+    Eye,
+    FilePlus2,
+    FileText,
+    Pencil,
+    Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     create,
     destroy,
@@ -18,6 +33,7 @@ type Report = {
     report_year: number;
     status: string;
     entries_count: number;
+    net_pay_cents?: number | null;
     user?: { name: string };
     prepared_name: string | null;
     prepared_by: { name: string } | null;
@@ -36,9 +52,15 @@ export default function ReportsIndex({
     reports,
     currentUserId,
     filters,
+    showNetPay,
 }: {
     currentUserId: number;
-    filters: { year: number; month: number; search: string };
+    showNetPay: boolean;
+    filters: {
+        year: number;
+        month: number;
+        search: string;
+    };
     reports: {
         data: Report[];
         links: Array<{ url: string | null; label: string; active: boolean }>;
@@ -146,6 +168,11 @@ export default function ReportsIndex({
                                     <th className="px-5 py-3">Prepared by</th>
                                     <th className="px-5 py-3">Entries</th>
                                     <th className="px-5 py-3">Status</th>
+                                    {showNetPay && (
+                                        <th className="px-5 py-3 text-right">
+                                            Net pay
+                                        </th>
+                                    )}
                                     <th className="px-5 py-3 text-right md:px-6">
                                         Actions
                                     </th>
@@ -193,67 +220,111 @@ export default function ReportsIndex({
                                                     {report.status}
                                                 </span>
                                             </td>
+                                            {showNetPay && (
+                                                <td className="px-5 py-4 text-right whitespace-nowrap tabular-nums">
+                                                    {report.net_pay_cents ==
+                                                    null
+                                                        ? '—'
+                                                        : new Intl.NumberFormat(
+                                                              'en-PH',
+                                                              {
+                                                                  style: 'currency',
+                                                                  currency:
+                                                                      'PHP',
+                                                              },
+                                                          ).format(
+                                                              report.net_pay_cents /
+                                                                  100,
+                                                          )}
+                                                </td>
+                                            )}
                                             <td className="px-5 py-4 md:px-6">
-                                                <div className="flex items-center justify-end gap-4">
-                                                    <Link
-                                                        href={show(report.id)}
-                                                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                                                    >
-                                                        View
-                                                        <ArrowRight className="size-3.5" />
-                                                    </Link>
-                                                    {report.can_edit && (
-                                                        <Link
-                                                            href={edit(report.id)}
-                                                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                                                <div className="flex justify-end">
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger
+                                                            asChild
                                                         >
-                                                            Edit
-                                                            <ArrowRight className="size-3.5" />
-                                                        </Link>
-                                                    )}
-                                                    {isOwner && (
-                                                        <Button
-                                                            type="button"
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                if (
-                                                                    window.confirm(
-                                                                        'Duplicate this report as a new draft?',
-                                                                    )
-                                                                ) {
-                                                                    router.post(
-                                                                        duplicate(
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                aria-label={`Actions for ${report.report_month}/${report.report_year} report by ${report.user?.name ?? 'Unknown'}`}
+                                                            >
+                                                                Actions{' '}
+                                                                <ChevronDown className="size-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem
+                                                                asChild
+                                                            >
+                                                                <Link
+                                                                    href={show(
+                                                                        report.id,
+                                                                    )}
+                                                                >
+                                                                    <Eye /> View
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                            {report.can_edit && (
+                                                                <DropdownMenuItem
+                                                                    asChild
+                                                                >
+                                                                    <Link
+                                                                        href={edit(
                                                                             report.id,
-                                                                        ).url,
-                                                                    );
-                                                                }
-                                                            }}
-                                                        >
-                                                            Duplicate
-                                                        </Button>
-                                                    )}
-                                                    {isOwner && (
-                                                        <button
-                                                            type="button"
-                                                            aria-label={`Delete ${report.report_month}/${report.report_year} report`}
-                                                            className="text-muted-foreground transition-colors hover:text-destructive"
-                                                            onClick={() => {
-                                                                if (
-                                                                    confirm(
-                                                                        'Delete this report and its entries?',
-                                                                    )
-                                                                )
-                                                                    router.delete(
-                                                                        destroy(
-                                                                            report.id,
-                                                                        ).url,
-                                                                    );
-                                                            }}
-                                                        >
-                                                            <Trash2 className="size-4" />
-                                                        </button>
-                                                    )}
+                                                                        )}
+                                                                    >
+                                                                        <Pencil />{' '}
+                                                                        Edit
+                                                                    </Link>
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {isOwner && (
+                                                                <>
+                                                                    <DropdownMenuItem
+                                                                        onSelect={() => {
+                                                                            if (
+                                                                                window.confirm(
+                                                                                    'Duplicate this report as a new draft?',
+                                                                                )
+                                                                            ) {
+                                                                                router.post(
+                                                                                    duplicate(
+                                                                                        report.id,
+                                                                                    )
+                                                                                        .url,
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <Copy />{' '}
+                                                                        Duplicate
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuSeparator />
+                                                                    <DropdownMenuItem
+                                                                        variant="destructive"
+                                                                        onSelect={() => {
+                                                                            if (
+                                                                                window.confirm(
+                                                                                    'Delete this report and its entries?',
+                                                                                )
+                                                                            ) {
+                                                                                router.delete(
+                                                                                    destroy(
+                                                                                        report.id,
+                                                                                    )
+                                                                                        .url,
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <Trash2 />{' '}
+                                                                        Delete
+                                                                    </DropdownMenuItem>
+                                                                </>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </div>
                                             </td>
                                         </tr>

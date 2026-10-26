@@ -1245,46 +1245,22 @@ export default function ReportEditor({
                                 <option value="custom">Custom text</option>
                             </select>
                         </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                type="button"
-                                onClick={() => {
-                                    setEntries(
-                                        [...entries].sort((a, b) =>
-                                            a.accomplishment_date.localeCompare(
-                                                b.accomplishment_date,
-                                            ),
+                        <Button
+                            variant="outline"
+                            type="button"
+                            onClick={() => {
+                                setEntries(
+                                    [...entries].sort((a, b) =>
+                                        a.accomplishment_date.localeCompare(
+                                            b.accomplishment_date,
                                         ),
-                                    );
-                                    setDirty(true);
-                                }}
-                            >
-                                Sort by date
-                            </Button>
-                            <Button
-                                variant="outline"
-                                type="button"
-                                onClick={() => {
-                                    setEntries([
-                                        ...entries,
-                                        {
-                                            key: createDraftEntryKey(),
-                                            accomplishment_date: '',
-                                            quantity: '',
-                                            time_minutes: null,
-                                            task_accomplished: '',
-                                            original_task_accomplished: '',
-                                            ai_suggested_task_accomplished: '',
-                                            ai_enhanced: false,
-                                        },
-                                    ]);
-                                    setDirty(true);
-                                }}
-                            >
-                                <Plus /> Add
-                            </Button>
-                        </div>
+                                    ),
+                                );
+                                setDirty(true);
+                            }}
+                        >
+                            Sort by date
+                        </Button>
                     </div>
                     {quantityMode === 'time' && (
                         <label className="mb-4 flex items-center gap-2 text-sm font-medium">
@@ -1588,6 +1564,46 @@ export default function ReportEditor({
                                 </div>
                             </div>
                         ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                            variant="outline"
+                            type="button"
+                            onClick={() => {
+                                setEntries(
+                                    [...entries].sort((a, b) =>
+                                        a.accomplishment_date.localeCompare(
+                                            b.accomplishment_date,
+                                        ),
+                                    ),
+                                );
+                                setDirty(true);
+                            }}
+                        >
+                            Sort by date
+                        </Button>
+                        <Button
+                            variant="outline"
+                            type="button"
+                            onClick={() => {
+                                setEntries([
+                                    ...entries,
+                                    {
+                                        key: createDraftEntryKey(),
+                                        accomplishment_date: '',
+                                        quantity: '',
+                                        time_minutes: null,
+                                        task_accomplished: '',
+                                        original_task_accomplished: '',
+                                        ai_suggested_task_accomplished: '',
+                                        ai_enhanced: false,
+                                    },
+                                ]);
+                                setDirty(true);
+                            }}
+                        >
+                            <Plus /> Add
+                        </Button>
                     </div>
                     {quantityMode === 'time' && canViewComputation && (
                         <div className="mt-4 grid gap-3 sm:grid-cols-3">

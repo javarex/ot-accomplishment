@@ -4,11 +4,39 @@ namespace Tests\Feature\Settings;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class ProfileUpdateTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_super_admin_can_save_and_disable_net_pay_preference(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+
+        $this->actingAs($admin)->patch(route('profile.update'), [
+            'name' => $admin->name, 'email' => $admin->email, 'show_report_net_pay' => '1',
+        ])->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+        $this->assertTrue($admin->fresh()->show_report_net_pay);
+        $this->get(route('reports.index'))->assertInertia(fn (AssertableInertia $page) => $page->where('showNetPay', true));
+        $this->patch(route('profile.update'), [
+            'name' => $admin->name, 'email' => $admin->email, 'show_report_net_pay' => '0',
+        ])->assertSessionHasNoErrors();
+        $this->assertFalse($admin->fresh()->show_report_net_pay);
+        $this->get(route('reports.index'))->assertInertia(fn (AssertableInertia $page) => $page->where('showNetPay', false));
+    }
+
+    public function test_staff_cannot_enable_net_pay_preference(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->patch(route('profile.update'), [
+            'name' => $user->name, 'email' => $user->email, 'show_report_net_pay' => '1',
+        ])->assertSessionHasErrors('show_report_net_pay');
+
+        $this->assertFalse($user->fresh()->show_report_net_pay);
+    }
 
     public function test_profile_page_is_displayed()
     {

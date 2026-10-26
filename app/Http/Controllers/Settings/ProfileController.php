@@ -26,7 +26,10 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $request->user()->fill($request->safe()->except('show_report_net_pay'));
+        if ($request->user()->is_admin && $request->has('show_report_net_pay')) {
+            $request->user()->show_report_net_pay = $request->boolean('show_report_net_pay');
+        }
 
         $request->user()->save();
 

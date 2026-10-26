@@ -1,4 +1,6 @@
 export type User = {
+    is_admin: boolean;
+    show_report_net_pay: boolean;
     id: number;
     name: string;
     email: string;

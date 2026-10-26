@@ -77,6 +77,36 @@ export default function Profile() {
                                 />
                             </div>
 
+                            {auth.user.is_admin && (
+                                <div className="space-y-2 rounded-xl border p-4">
+                                    <input
+                                        type="hidden"
+                                        name="show_report_net_pay"
+                                        value="0"
+                                    />
+                                    <label className="flex items-center gap-2 text-sm font-medium">
+                                        <input
+                                            type="checkbox"
+                                            name="show_report_net_pay"
+                                            value="1"
+                                            defaultChecked={
+                                                auth.user.show_report_net_pay
+                                            }
+                                            className="size-4 accent-primary"
+                                        />
+                                        Show OT net pay in All reports
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Display the net pay column for
+                                        time-based reports on your All reports
+                                        page.
+                                    </p>
+                                    <InputError
+                                        message={errors.show_report_net_pay}
+                                    />
+                                </div>
+                            )}
+
                             <div className="flex items-center gap-4">
                                 <Button
                                     disabled={processing}
