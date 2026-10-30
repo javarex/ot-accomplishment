@@ -32,6 +32,55 @@ class AccomplishmentReportTest extends TestCase
             ->where('reports.data.0.prepared_by.name', 'Linked Preparer')->etc());
     }
 
+    public function test_own_reports_come_first_before_pagination_within_the_filtered_month(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $own = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        for ($index = 0; $index < 16; $index++) {
+            AccomplishmentReport::create(['user_id' => $other->id, 'report_month' => 9, 'report_year' => 2026]);
+        }
+        $newerOwn = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 10, 'report_year' => 2026]);
+        AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2025]);
+
+        $this->actingAs($user)->get(route('reports.index', ['year' => 2026, 'month' => 9]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('reports.total', 18)
+                ->where('reports.data.0.id', $newerOwn->id)
+                ->where('reports.data.1.id', $own->id)
+                ->where('reports.data.2.user_id', $other->id)->etc());
+
+        $this->get(route('reports.index', ['year' => 2026, 'month' => 9, 'search' => $other->name]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('reports.total', 16)
+                ->where('reports.data.0.user_id', $other->id)->etc());
+    }
+
+    public function test_report_list_includes_actual_rendered_minutes_only_for_time_based_reports(): void
+    {
+        $user = User::factory()->create();
+        $custom = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'custom']);
+        $custom->entries()->create(['accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 90]);
+        $empty = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time']);
+        $time = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026, 'quantity_mode' => 'time']);
+        $time->entries()->createMany([
+            ['accomplishment_date' => '2026-09-04', 'quantity_mode' => 'time', 'time_minutes' => 135],
+            ['accomplishment_date' => '2026-09-05', 'quantity_mode' => 'time', 'time_minutes' => 80],
+            ['accomplishment_date' => '2026-09-06', 'quantity_mode' => 'custom', 'quantity' => '1 task', 'time_minutes' => 60],
+        ]);
+
+        $this->actingAs($user)->get(route('reports.index', ['year' => 2026, 'month' => 9]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('showNetPay', false)
+                ->where('reports.data.0.id', $time->id)
+                ->where('reports.data.0.rendered_minutes', 215)
+                ->where('reports.data.1.id', $empty->id)
+                ->where('reports.data.1.rendered_minutes', 0)
+                ->where('reports.data.2.id', $custom->id)
+                ->where('reports.data.2.rendered_minutes', null)->etc());
+    }
+
     public function test_user_can_save_draft_with_free_text_quantity_and_blank_task(): void
     {
         $user = User::factory()->create();

@@ -33,6 +33,7 @@ type Report = {
     report_year: number;
     status: string;
     entries_count: number;
+    rendered_minutes: number | null;
     net_pay_cents?: number | null;
     user?: { name: string };
     prepared_name: string | null;
@@ -167,6 +168,7 @@ export default function ReportsIndex({
                                     <th className="px-5 py-3">Owner</th>
                                     <th className="px-5 py-3">Prepared by</th>
                                     <th className="px-5 py-3">Entries</th>
+                                    <th className="px-5 py-3">Hours rendered</th>
                                     <th className="px-5 py-3">Status</th>
                                     {showNetPay && (
                                         <th className="px-5 py-3 text-right">
@@ -212,6 +214,11 @@ export default function ReportsIndex({
                                             </td>
                                             <td className="px-5 py-4 text-muted-foreground tabular-nums">
                                                 {report.entries_count}
+                                            </td>
+                                            <td className="px-5 py-4 whitespace-nowrap text-muted-foreground tabular-nums">
+                                                {report.rendered_minutes === null
+                                                    ? 'N/A'
+                                                    : `${Math.floor(report.rendered_minutes / 60)}h ${report.rendered_minutes % 60}m`}
                                             </td>
                                             <td className="px-5 py-4">
                                                 <span

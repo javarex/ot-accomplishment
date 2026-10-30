@@ -52,12 +52,14 @@ class AccomplishmentReportController extends Controller
                         });
                 });
             })
-            ->select(['id', 'user_id', 'report_month', 'report_year', 'status', 'prepared_name', 'prepared_by_id'])
+            ->select(['id', 'user_id', 'report_month', 'report_year', 'status', 'prepared_name', 'prepared_by_id', 'quantity_mode'])
             ->when($showNetPay, fn (Builder $query) => $query
                 ->addSelect(['quantity_mode', 'hourly_rate', 'is_jo', 'daily_rate', 'jo_tax_percent'])
                 ->with(['entries:id,accomplishment_report_id,accomplishment_date,quantity_mode,time_minutes']))
             ->with(['user:id,name', 'preparedBy:id,name'])
             ->withCount('entries')
+            ->withSum(['entries as rendered_minutes' => fn (Builder $query) => $query->where('quantity_mode', 'time')], 'time_minutes')
+            ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$request->user()->id])
             ->orderByDesc('report_year')
             ->orderByDesc('report_month')
             ->latest('id')
@@ -65,6 +67,7 @@ class AccomplishmentReportController extends Controller
             ->appends($filters)
             ->through(function (AccomplishmentReport $report) use ($showNetPay, $calculator): AccomplishmentReport {
                 $report->setAttribute('can_edit', Gate::allows('update', $report));
+                $report->setAttribute('rendered_minutes', $report->quantity_mode === 'time' ? (int) $report->rendered_minutes : null);
                 if ($showNetPay) {
                     $netPayCents = null;
                     if ($report->quantity_mode === 'time' && $report->entries->isNotEmpty()) {

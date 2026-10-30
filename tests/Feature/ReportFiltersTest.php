@@ -83,7 +83,7 @@ class ReportFiltersTest extends TestCase
 
         $this->actingAs($user)->get(route('reports.index'))->assertInertia(fn (Assert $page) => $page
             ->where('filters.year', 2026)->where('filters.month', 10)
-            ->has('reports.data', 2)->where('reports.data.0.id', $otherReport->id)->where('reports.data.1.id', $report->id));
+            ->has('reports.data', 2)->where('reports.data.0.id', $report->id)->where('reports.data.1.id', $otherReport->id));
     }
 
     public function test_super_admin_can_filter_everyones_reports_and_pagination_keeps_the_period(): void
