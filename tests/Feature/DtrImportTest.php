@@ -443,6 +443,113 @@ class DtrImportTest extends TestCase
         $this->assertDatabaseHas('accomplishment_entries', ['accomplishment_report_id' => $report->id, 'accomplishment_date' => '2026-09-05', 'quantity' => '3 documents']);
     }
 
+    public function test_saved_dtr_modal_returns_attendance_without_private_storage_or_raw_data(): void
+    {
+        $user = User::factory()->create();
+        $import = $this->savedDtr($user);
+        $import->entries()->create(['work_date' => '2026-09-04', 'am_in' => '08:15', 'overtime_minutes' => 135, 'remarks' => 'Corrected attendance']);
+        $import->entries()->create(['work_date' => '2026-09-05']);
+
+        $this->actingAs($user)->getJson(route('reports.dtr.show', [$import->report, $import]))
+            ->assertOk()
+            ->assertJsonPath('employee_name', 'Raymart N. Itanong')
+            ->assertJsonPath('entries.0.date', '2026-09-04')
+            ->assertJsonPath('entries.0.am_in', '08:15')
+            ->assertJsonPath('entries.0.overtime_minutes', 135)
+            ->assertJsonPath('entries.0.remarks', 'Corrected attendance')
+            ->assertJsonPath('entries.1.overtime_minutes', null)
+            ->assertJsonCount(2, 'entries')
+            ->assertJsonMissingPath('file_path')
+            ->assertJsonMissingPath('parsed_data');
+
+        $this->assertDatabaseCount('accomplishment_entries', 0);
+    }
+
+    public function test_original_dtr_is_served_inline_to_its_owner(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $import = $this->savedDtr($user);
+        Storage::put($import->file_path, '%PDF-1.4 original DTR');
+
+        $response = $this->actingAs($user)->get(route('reports.dtr.original', [$import->report, $import]));
+
+        $response->assertOk()->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'inline; filename=dtr.pdf');
+        $this->assertSame('%PDF-1.4 original DTR', $response->streamedContent());
+        Storage::assertExists($import->file_path);
+    }
+
+    public function test_saved_dtr_preview_and_original_require_report_edit_access(): void
+    {
+        $owner = User::factory()->create();
+        $import = $this->savedDtr($owner);
+        $otherUser = User::factory()->create();
+
+        $this->getJson(route('reports.dtr.show', [$import->report, $import]))->assertUnauthorized();
+        $this->getJson(route('reports.dtr.original', [$import->report, $import]))->assertUnauthorized();
+        $this->actingAs($otherUser)->getJson(route('reports.dtr.show', [$import->report, $import]))->assertForbidden();
+        $this->actingAs($otherUser)->getJson(route('reports.dtr.original', [$import->report, $import]))->assertForbidden();
+    }
+
+    public function test_saved_dtr_preview_and_original_reject_an_import_from_another_report(): void
+    {
+        $user = User::factory()->create();
+        $import = $this->savedDtr($user);
+        $otherReport = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+
+        $this->actingAs($user)->getJson(route('reports.dtr.show', [$otherReport, $import]))->assertNotFound();
+        $this->actingAs($user)->getJson(route('reports.dtr.original', [$otherReport, $import]))->assertNotFound();
+    }
+
+    public function test_missing_original_dtr_returns_not_found(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $import = $this->savedDtr($user);
+
+        $this->actingAs($user)->get(route('reports.dtr.original', [$import->report, $import]))->assertNotFound();
+
+        Storage::assertMissing($import->file_path);
+    }
+
+    public function test_edit_page_upload_can_stage_dtr_for_modal_without_navigating(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<p>Name: RAYMART N. ITANONG</p><p>September 2026</p><p>4 08:00 12:00 13:00 17:00 OT 2h 15m</p>');
+        $pdf->render();
+
+        $response = $this->actingAs($user)->withHeaders(['Accept' => 'application/json'])
+            ->post(route('reports.dtr.store', $report), [
+                'dtr' => UploadedFile::fake()->createWithContent('dtr.pdf', $pdf->output()),
+            ]);
+
+        $import = DtrImport::firstOrFail();
+        $response->assertOk()->assertExactJson(['id' => $import->id]);
+        $this->assertDatabaseHas('dtr_entries', ['dtr_import_id' => $import->id, 'overtime_minutes' => 135]);
+        $this->assertDatabaseCount('accomplishment_entries', 0);
+        Storage::assertExists($import->file_path);
+    }
+
+    private function savedDtr(User $user): DtrImport
+    {
+        $report = AccomplishmentReport::create(['user_id' => $user->id, 'report_month' => 9, 'report_year' => 2026]);
+
+        return $report->dtrImports()->create([
+            'user_id' => $user->id,
+            'employee_name' => 'Raymart N. Itanong',
+            'month' => 9,
+            'year' => 2026,
+            'original_filename' => 'dtr.pdf',
+            'file_path' => 'dtr-imports/test.pdf',
+            'file_hash' => str_repeat('d', 64),
+            'parsed_data' => ['raw' => 'Original parsed PDF data'],
+        ]);
+    }
+
     /** @return array<string, int> */
     private function signatories(User $user): array
     {

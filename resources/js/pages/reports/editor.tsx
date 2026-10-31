@@ -32,6 +32,7 @@ import {
     preview as previewDtr,
     store as uploadDtr,
     show as reviewDtr,
+    original as originalDtr,
 } from '@/routes/reports/dtr';
 import {
     index as signatoryIndex,
@@ -190,6 +191,12 @@ export default function ReportEditor({
     );
     const [dirty, setDirty] = useState(false);
     const [busy, setBusy] = useState(false);
+    const savedDtrPreview = useHttp<Record<string, never>, DtrPreview>({});
+    const dtrUpload = useHttp<{ dtr: File | null }, { id: number }>({
+        dtr: null,
+    });
+    const [savedDtrId, setSavedDtrId] = useState<number | null>(null);
+    const [dtrLoadError, setDtrLoadError] = useState<string | null>(null);
     const [dtrFile, setDtrFile] = useState<File | null>(null);
     const dtrPreview = useHttp<{ dtr: File | null }, DtrPreview>({ dtr: null });
     const [dtrPreviewStatus, setDtrPreviewStatus] = useState<string | null>(
@@ -549,16 +556,39 @@ export default function ReportEditor({
             }
             return;
         }
-        router.post(
-            uploadDtr(report.id).url,
-            { dtr: dtrFile },
-            {
-                forceFormData: true,
-                onStart: () => setBusy(true),
-                onFinish: () => setBusy(false),
-            },
-        );
+        try {
+            const uploaded = await dtrUpload.post(uploadDtr(report.id).url);
+            await openSavedDtr(uploaded.id);
+        } catch {
+            setDtrLoadError(
+                'Unable to process the DTR. Check the PDF and try again.',
+            );
+        }
     }
+
+    async function openSavedDtr(id: number) {
+        if (!report) return;
+        setDtrLoadError(null);
+        try {
+            const preview = await savedDtrPreview.get(
+                reviewDtr({ report: report.id, dtrImport: id }).url,
+            );
+            setSavedDtrId(id);
+            setProcessedDtr(preview);
+            setOtCellValues({});
+            setOtCellErrors({});
+            setDtrNeedsConfirmation(false);
+            setDtrView('editable');
+            setShowDtrRecords(true);
+        } catch {
+            setDtrLoadError('Unable to load the saved DTR. Please try again.');
+        }
+    }
+
+    const originalDtrUrl =
+        report && savedDtrId
+            ? originalDtr({ report: report.id, dtrImport: savedDtrId }).url
+            : dtrPdfUrl;
 
     const dtrOvertimeMinutes = (processedDtr?.entries ?? []).reduce(
         (total, entry) =>
@@ -846,6 +876,10 @@ export default function ReportEditor({
                                         event.target.files?.[0] ?? null;
                                     setDtrFile(file);
                                     dtrPreview.setData('dtr', file);
+                                    dtrUpload.setData('dtr', file);
+                                    dtrUpload.clearErrors();
+                                    setDtrLoadError(null);
+                                    setSavedDtrId(null);
                                     dtrPreview.clearErrors();
                                     setOtCellValues({});
                                     setOtCellErrors({});
@@ -859,12 +893,18 @@ export default function ReportEditor({
                         </div>
                         <Button
                             type="submit"
-                            disabled={!dtrFile || busy || dtrPreview.processing}
+                            disabled={
+                                !dtrFile ||
+                                busy ||
+                                dtrPreview.processing ||
+                                dtrUpload.processing ||
+                                savedDtrPreview.processing
+                            }
                         >
                             Process DTR
                         </Button>
                     </form>
-                    {!report && processedDtr && (
+                    {processedDtr && (
                         <Button
                             type="button"
                             variant="outline"
@@ -907,7 +947,7 @@ export default function ReportEditor({
                                     }
                                     onClick={() => setDtrView('editable')}
                                 >
-                                    Editable DTR
+                                    {report ? 'DTR Records' : 'Editable DTR'}
                                 </Button>
                                 <Button
                                     type="button"
@@ -918,12 +958,12 @@ export default function ReportEditor({
                                     }
                                     onClick={() => setDtrView('original')}
                                 >
-                                    Original PDF
+                                    Original DTR (PDF)
                                 </Button>
                             </div>
-                            {dtrView === 'original' && dtrPdfUrl ? (
+                            {dtrView === 'original' && originalDtrUrl ? (
                                 <iframe
-                                    src={dtrPdfUrl}
+                                    src={originalDtrUrl}
                                     title="Original uploaded DTR"
                                     className="h-[65vh] w-full rounded-md border"
                                 />
@@ -1003,6 +1043,9 @@ export default function ReportEditor({
                                                             ).map((field) => (
                                                                 <td key={field}>
                                                                     <input
+                                                                        readOnly={Boolean(
+                                                                            report,
+                                                                        )}
                                                                         className="h-8 w-20 bg-white text-center text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
                                                                         value={
                                                                             entry[
@@ -1031,6 +1074,9 @@ export default function ReportEditor({
                                                             ))}
                                                             <td className="w-28">
                                                                 <input
+                                                                    readOnly={Boolean(
+                                                                        report,
+                                                                    )}
                                                                     className="h-8 w-28 bg-white text-center text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
                                                                     aria-label={`OT rendered time for ${entry.date}`}
                                                                     placeholder="e.g. 2h 15m"
@@ -1089,6 +1135,9 @@ export default function ReportEditor({
                                                             </td>
                                                             <td>
                                                                 <input
+                                                                    readOnly={Boolean(
+                                                                        report,
+                                                                    )}
                                                                     className="h-8 w-full min-w-28 bg-white px-1 text-black outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-600"
                                                                     value={
                                                                         entry.remarks ??
@@ -1144,21 +1193,41 @@ export default function ReportEditor({
                                 </div>
                             )}
                             <p className="text-sm text-muted-foreground">
-                                Edit attendance times using HH:MM and type
-                                remarks directly in the cells. Enter OT rendered
-                                time directly in its cell, e.g. 2h 15m. Clear an
-                                OT cell to remove its confirmed date from 03 ·
-                                Write. Changes are applied to 03 · Write only
-                                after confirmation.
+                                {report ? (
+                                    'Saved attendance records and the original uploaded PDF are available for preview.'
+                                ) : (
+                                    <>
+                                        Edit attendance times using HH:MM and
+                                        type remarks directly in the cells.
+                                        Enter OT rendered time directly in its
+                                        cell, e.g. 2h 15m. Clear an OT cell to
+                                        remove its confirmed date from 03 ·
+                                        Write. Changes are applied to 03 · Write
+                                        only after confirmation.
+                                    </>
+                                )}
                             </p>
                             <DialogFooter>
-                                <Button
-                                    type="button"
-                                    disabled={hasInvalidDtrOt}
-                                    onClick={confirmDtrOvertime}
-                                >
-                                    Confirm OT and Apply to Write
-                                </Button>
+                                {report && savedDtrId ? (
+                                    <Button asChild>
+                                        <Link
+                                            href={reviewDtr({
+                                                report: report.id,
+                                                dtrImport: savedDtrId,
+                                            })}
+                                        >
+                                            Review Import
+                                        </Link>
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        disabled={hasInvalidDtrOt}
+                                        onClick={confirmDtrOvertime}
+                                    >
+                                        Confirm OT and Apply to Write
+                                    </Button>
+                                )}
                                 <Button
                                     type="button"
                                     onClick={() => setShowDtrRecords(false)}
@@ -1178,19 +1247,30 @@ export default function ReportEditor({
                             {dtrPreview.errors.dtr}
                         </p>
                     )}
+                    {(dtrLoadError || dtrUpload.errors.dtr) && (
+                        <p
+                            className="mt-3 text-sm text-destructive"
+                            role="alert"
+                        >
+                            {dtrUpload.errors.dtr || dtrLoadError}
+                        </p>
+                    )}
                     {report && report.dtr_imports?.length > 0 && (
                         <div className="mt-4 space-y-2">
                             {report.dtr_imports.map((item) => (
                                 <div key={item.id} className="text-sm">
-                                    <Link
-                                        href={reviewDtr({
-                                            report: report.id,
-                                            dtrImport: item.id,
-                                        })}
-                                        className="underline"
+                                    <Button
+                                        type="button"
+                                        variant="link"
+                                        className="h-auto p-0"
+                                        disabled={
+                                            savedDtrPreview.processing ||
+                                            dtrUpload.processing
+                                        }
+                                        onClick={() => openSavedDtr(item.id)}
                                     >
                                         {item.original_filename}
-                                    </Link>{' '}
+                                    </Button>{' '}
                                     <span className="text-muted-foreground">
                                         ({item.import_status})
                                     </span>

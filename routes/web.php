@@ -36,6 +36,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('reports/dtr/preview', [DtrImportController::class, 'preview'])->name('reports.dtr.preview');
     Route::post('reports/{report}/dtr', [DtrImportController::class, 'store'])->name('reports.dtr.store');
     Route::get('reports/{report}/dtr/{dtrImport}', [DtrImportController::class, 'show'])->name('reports.dtr.show');
+    Route::get('reports/{report}/dtr/{dtrImport}/original', [DtrImportController::class, 'original'])->name('reports.dtr.original');
     Route::post('reports/{report}/dtr/{dtrImport}/import', [DtrImportController::class, 'commit'])->name('reports.dtr.commit');
     Route::resource('signatories', SignatoryController::class)->except(['create', 'edit', 'show']);
     Route::get('report-template', [ReportTemplateController::class, 'edit'])->name('report-template.edit');

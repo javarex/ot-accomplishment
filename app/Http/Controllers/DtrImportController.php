@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccomplishmentReport;
+use App\Models\DtrEntry;
 use App\Models\DtrImport;
 use App\Services\Accomplishments\DtrImportStager;
 use App\Services\Accomplishments\OvertimeQuantity;
@@ -11,11 +12,13 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DtrImportController extends Controller
 {
@@ -33,17 +36,21 @@ class DtrImportController extends Controller
         ]);
     }
 
-    public function store(Request $request, AccomplishmentReport $report, DtrImportStager $stager): RedirectResponse
+    public function store(Request $request, AccomplishmentReport $report, DtrImportStager $stager): RedirectResponse|JsonResponse
     {
         Gate::authorize('importDtr', $report);
         $request->validate(['dtr' => ['required', 'file', 'mimes:pdf', 'extensions:pdf', 'max:10240']]);
         $import = $stager->stage($report, $request->user()->id, $request->file('dtr'));
 
+        if ($request->expectsJson()) {
+            return response()->json(['id' => $import->id]);
+        }
+
         return redirect()->route('reports.dtr.show', [$report, $import])
             ->with('status', $import->wasRecentlyCreated ? 'Review the detected DTR dates before importing them.' : 'This DTR was already uploaded. Review the existing import.');
     }
 
-    public function show(AccomplishmentReport $report, DtrImport $dtrImport): Response
+    public function show(Request $request, AccomplishmentReport $report, DtrImport $dtrImport): Response|JsonResponse
     {
         Gate::authorize('importDtr', $report);
         abort_unless($dtrImport->accomplishment_report_id === $report->id, 404);
@@ -51,10 +58,32 @@ class DtrImportController extends Controller
             'id', 'dtr_import_id', 'work_date', 'am_in', 'am_out', 'pm_in', 'pm_out', 'overtime_minutes', 'remarks', 'selected_for_import',
         ])]);
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                ...$dtrImport->only(['employee_name', 'month', 'year']),
+                'entries' => $dtrImport->entries->map(fn (DtrEntry $entry): array => [
+                    'date' => $entry->work_date->format('Y-m-d'),
+                    ...$entry->only(['am_in', 'am_out', 'pm_in', 'pm_out', 'overtime_minutes', 'remarks']),
+                ]),
+            ]);
+        }
+
         return Inertia::render('dtr/review', [
             'report' => $report->only(['id', 'report_month', 'report_year', 'quantity_mode']),
             'import' => $dtrImport->only(['id', 'employee_name', 'employee_id', 'month', 'year', 'original_filename', 'import_status', 'entries']),
             'existingDates' => $report->entries()->pluck('accomplishment_date')->map(fn ($date) => substr((string) $date, 0, 10))->all(),
+        ]);
+    }
+
+    public function original(AccomplishmentReport $report, DtrImport $dtrImport): StreamedResponse
+    {
+        Gate::authorize('importDtr', $report);
+        abort_unless($dtrImport->accomplishment_report_id === $report->id, 404);
+        abort_unless(Storage::exists($dtrImport->file_path), 404);
+
+        return Storage::response($dtrImport->file_path, 'dtr.pdf', [
+            'Content-Type' => 'application/pdf',
+            'Cache-Control' => 'private, no-store',
         ]);
     }
 
